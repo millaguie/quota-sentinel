@@ -75,6 +75,103 @@ All endpoints live under `/v1`.
 | `DELETE`  | `/v1/instances/{id}`             | Deregister instance                            |
 | `PATCH`  | `/v1/instances/{id}/heartbeat`    | Keep-alive with optional state update          |
 
+### Registration Options
+
+The `POST /v1/instances` endpoint accepts different auth formats:
+
+#### 1. OpenCode providers (ZAI, DeepSeek, MiniMax, Alibaba)
+
+```json
+{
+  "project_name": "my-project",
+  "framework": "opencode",
+  "auth": {
+    "opencode_auth": {
+      "PROVIDER_KEY": {"key": "api-key"}
+    }
+  }
+}
+```
+
+**Valid provider keys:**
+| Auth Key | Provider | Notes |
+|----------|----------|-------|
+| `zai-coding-plan` or `zai` | zai | Z.ai |
+| `deepseek-coding-plan` or `deepseek` | deepseek | DeepSeek |
+| `minimax-coding-plan` or `minimax` | minimax | MiniMax |
+| `bailian-coding-plan` or `alibaba-coding-plan` or `dashscope` or `alibaba` | alibaba | Alibaba Cloud |
+
+#### 2. Claude (Anthropic OAuth)
+
+```json
+{
+  "project_name": "my-project",
+  "framework": "claude",
+  "auth": {
+    "claude_credentials": {
+      "accessToken": "...",
+      "refreshToken": "...",
+      "expiresAt": 1234567890000
+    }
+  }
+}
+```
+
+#### 3. GitHub Copilot
+
+```json
+{
+  "project_name": "my-project",
+  "framework": "opencode",
+  "auth": {
+    "github_token": "gho_..."
+  }
+}
+```
+
+#### 4. Full example with all options
+
+```json
+{
+  "project_name": "my-project",
+  "framework": "opencode",
+  "poll_interval": 300,
+  "provider_config": {
+    "minimax": {"group_id": "group-123"},
+    "copilot": {"github_username": "myuser", "plan": "pro"}
+  },
+  "hard_caps": {
+    "deepseek_default": 90.0,
+    "claude_five_hour": 70.0
+  },
+  "auth": {
+    "opencode_auth": {
+      "deepseek-coding-plan": {"key": "sk-..."},
+      "minimax-coding-plan": {"key": "sk-...", "group_id": "group-123"}
+    },
+    "claude_credentials": {
+      "accessToken": "...",
+      "refreshToken": "...",
+      "expiresAt": 1234567890000
+    },
+    "github_token": "gho_..."
+  }
+}
+```
+
+**Optional fields:**
+| Field | Description |
+|-------|-------------|
+| `poll_interval` | Poll frequency in seconds (default: 300, min: 30) |
+| `provider_config` | Provider-specific settings (see below) |
+| `hard_caps` | Override default hard caps per provider |
+
+**provider_config options:**
+| Provider | Options |
+|----------|---------|
+| minimax | `group_id`: string |
+| copilot | `github_username`: string, `plan`: "pro" or "business" |
+
 ### Status & monitoring
 
 | Method  | Path                  | Description                                             |
@@ -85,6 +182,51 @@ All endpoints live under `/v1`.
 | `GET`   | `/v1/providers/{name}`| Detailed provider info with subscriber list             |
 | `POST`  | `/v1/poll`            | Trigger repoll (requires X-API-Key header)              |
 | `GET`   | `/v1/health`          | Server health check                                     |
+
+### GET /v1/providers
+
+Returns a dict of provider name → status. Empty `{}` if no instances registered.
+
+```json
+{
+  "deepseek": {
+    "status": "GREEN",
+    "windows": {
+      "rolling": {
+        "utilization": 45.2,
+        "velocity_pct_per_hour": 5.3,
+        "resets_at": "2026-04-10T00:00:00+00:00",
+        "status": "GREEN"
+      }
+    }
+  }
+}
+```
+
+### GET /v1/providers/{name}
+
+```json
+{
+  "name": "deepseek",
+  "fingerprint": "abc123...",
+  "subscribers": ["instance-id-1", "instance-id-2"],
+  "windows": {
+    "rolling": {
+      "utilization": 45.2,
+      "resets_at": "2026-04-10T00:00:00+00:00"
+    }
+  }
+}
+```
+
+Or if no data:
+```json
+{
+  "name": "deepseek",
+  "status": "UNKNOWN",
+  "error": "no data"
+}
+```
 
 ## Authentication
 
