@@ -42,7 +42,7 @@ def start(host: str, port: int, poll_interval: int) -> None:
         default_poll_interval=poll_interval,
     )
     app = create_app(config)
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 @cli.command()
