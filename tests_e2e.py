@@ -3,10 +3,8 @@
 
 from __future__ import annotations
 
-import json
 import sys
 import time
-import subprocess
 import requests
 
 SERVER_URL = "http://127.0.0.1:7878"
@@ -70,7 +68,7 @@ def test_instance_status(instance_id: str):
     data = resp.json()
     assert "overall_status" in data
     assert "recommendation" in data
-    print(f"✓ Instance status passed")
+    print("✓ Instance status passed")
 
 
 def test_heartbeat(instance_id: str):
@@ -79,14 +77,14 @@ def test_heartbeat(instance_id: str):
         f"{SERVER_URL}/v1/instances/{instance_id}/heartbeat", json={"state": "active"}
     )
     assert resp.status_code == 200
-    print(f"✓ Heartbeat passed")
+    print("✓ Heartbeat passed")
 
 
 def test_deregister_instance(instance_id: str):
     """Test instance deregistration."""
     resp = requests.delete(f"{SERVER_URL}/v1/instances/{instance_id}")
     assert resp.status_code == 200
-    print(f"✓ Deregister passed")
+    print("✓ Deregister passed")
 
 
 def main():

@@ -41,7 +41,9 @@ def _get_config() -> ServerConfig:
 # ── Instance registration ──────────────────────────────────────────
 
 
-def _build_providers_from_auth(auth: dict[str, Any], provider_config: dict[str, Any]) -> tuple[
+def _build_providers_from_auth(
+    auth: dict[str, Any], provider_config: dict[str, Any]
+) -> tuple[
     dict[str, Any],  # {provider_name: UsageProvider}
     dict[str, str],  # {provider_name: raw_key} for fingerprinting
 ]:
@@ -162,7 +164,9 @@ async def register_instance(request: Request) -> JSONResponse:
     # Build providers from auth payload
     providers, keys = _build_providers_from_auth(auth, provider_config)
     if not providers:
-        return JSONResponse({"error": "no valid providers found in auth"}, status_code=400)
+        return JSONResponse(
+            {"error": "no valid providers found in auth"}, status_code=400
+        )
 
     entry = store.register_instance(
         instance_id=instance_id,
@@ -176,15 +180,19 @@ async def register_instance(request: Request) -> JSONResponse:
 
     logger.info(
         "Registered instance %s (%s) with providers: %s",
-        instance_id, project_name,
+        instance_id,
+        project_name,
         store.provider_names_for_instance(instance_id),
     )
 
-    return JSONResponse({
-        "instance_id": instance_id,
-        "providers": store.provider_names_for_instance(instance_id),
-        "poll_interval": entry.poll_interval,
-    }, status_code=201)
+    return JSONResponse(
+        {
+            "instance_id": instance_id,
+            "providers": store.provider_names_for_instance(instance_id),
+            "poll_interval": entry.poll_interval,
+        },
+        status_code=201,
+    )
 
 
 async def deregister_instance(request: Request) -> JSONResponse:
@@ -271,7 +279,6 @@ async def global_status(request: Request) -> JSONResponse:
         description: Current global state.
     """
     store = _get_store()
-    config = _get_config()
 
     summary = store.summary()
 
@@ -313,16 +320,18 @@ async def global_status(request: Request) -> JSONResponse:
                 "error": pe.last_result.error,
             }
 
-    return JSONResponse({
-        **summary,
-        "timestamp": datetime.now(UTC).isoformat(),
-        "instances": instances_out,
-        "providers": providers_out,
-        "allocations": {
-            k: {ck: round(cv, 1) for ck, cv in v.items()}
-            for k, v in allocations.items()
-        },
-    })
+    return JSONResponse(
+        {
+            **summary,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "instances": instances_out,
+            "providers": providers_out,
+            "allocations": {
+                k: {ck: round(cv, 1) for ck, cv in v.items()}
+                for k, v in allocations.items()
+            },
+        }
+    )
 
 
 async def instance_status(request: Request) -> JSONResponse:
@@ -383,7 +392,10 @@ async def providers_summary(request: Request) -> JSONResponse:
     for pe in store.unique_providers():
         pname = pe.provider_name
         if not pe.last_result or pe.last_result.error:
-            out[pname] = {"status": "UNKNOWN", "error": pe.last_result.error if pe.last_result else "no data"}
+            out[pname] = {
+                "status": "UNKNOWN",
+                "error": pe.last_result.error if pe.last_result else "no data",
+            }
             continue
 
         worst = "GREEN"
@@ -489,12 +501,14 @@ async def health(request: Request) -> JSONResponse:
               $ref: '#/components/schemas/HealthResponse'
     """
     store = _get_store()
-    return JSONResponse({
-        "status": "ok",
-        "uptime": round(store.uptime()),
-        "providers": len(store.providers),
-        "instances": len(store.instances),
-    })
+    return JSONResponse(
+        {
+            "status": "ok",
+            "uptime": round(store.uptime()),
+            "providers": len(store.providers),
+            "instances": len(store.instances),
+        }
+    )
 
 
 # ── App factory ─────────────────────────────────────────────────────
@@ -526,7 +540,8 @@ def create_app(config: ServerConfig | None = None) -> Starlette:
         poll_task = asyncio.create_task(run_loop(_store, _config))
         logger.info(
             "quota-sentinel listening on %s:%d",
-            _config.host, _config.port,
+            _config.host,
+            _config.port,
         )
         yield
         poll_task.cancel()
