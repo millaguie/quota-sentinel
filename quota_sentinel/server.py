@@ -347,11 +347,14 @@ async def global_status(request: Request) -> JSONResponse:
             for wn, wd in pe.last_result.windows.items():
                 tracker = store.velocities.get(pname, {}).get(wn)
                 vel = tracker.velocity_pct_per_hour() if tracker else 0.0
-                windows[wn] = {
+                w: dict[str, Any] = {
                     "utilization": round(wd.utilization, 1),
                     "velocity_pct_per_hour": round(vel, 1),
                     "resets_at": wd.resets_at.isoformat() if wd.resets_at else None,
                 }
+                if wd.metadata:
+                    w["metadata"] = wd.metadata
+                windows[wn] = w
             providers_out[pname] = {
                 "subscribers": len(pe.subscribers),
                 "fingerprint": pe.fingerprint,
@@ -460,12 +463,15 @@ async def providers_summary(request: Request) -> JSONResponse:
             vel = tracker.velocity_pct_per_hour() if tracker else 0.0
             cap = get_hard_cap(pname, wn, config.hard_caps)
             ws = _window_status(wd.utilization, vel, cap, config.safety_margin_min)
-            windows[wn] = {
+            w2: dict[str, Any] = {
                 "utilization": round(wd.utilization, 1),
                 "velocity_pct_per_hour": round(vel, 1),
                 "resets_at": wd.resets_at.isoformat() if wd.resets_at else None,
                 "status": ws,
             }
+            if wd.metadata:
+                w2["metadata"] = wd.metadata
+            windows[wn] = w2
             if status_order.get(ws, 0) > status_order.get(worst, 0):
                 worst = ws
 
@@ -517,13 +523,16 @@ async def provider_detail(request: Request) -> JSONResponse:
         if pe.last_result.error:
             result["error"] = pe.last_result.error
         else:
-            result["windows"] = {
-                wn: {
+            windows_out = {}
+            for wn, wd in pe.last_result.windows.items():
+                w3: dict[str, Any] = {
                     "utilization": round(wd.utilization, 1),
                     "resets_at": wd.resets_at.isoformat() if wd.resets_at else None,
                 }
-                for wn, wd in pe.last_result.windows.items()
-            }
+                if wd.metadata:
+                    w3["metadata"] = wd.metadata
+                windows_out[wn] = w3
+            result["windows"] = windows_out
     return JSONResponse(result)
 
 

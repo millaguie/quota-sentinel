@@ -49,7 +49,7 @@ class DeepSeekUsageProvider(UsageProvider):
         is_available = data.get("is_available", total > 0)
 
         if self._ref_balance is None:
-            self._ref_balance = max(total, 10.0)
+            self._ref_balance = total if total > 0 else 1.0
         ref = self._ref_balance
 
         pct = max(0.0, 100.0 - (total / ref * 100)) if ref > 0 else 0.0
@@ -59,6 +59,14 @@ class DeepSeekUsageProvider(UsageProvider):
         return UsageResult(
             provider=self.name,
             windows={
-                "balance": WindowUsage(utilization=min(pct, 100.0), resets_at=None)
+                "balance": WindowUsage(
+                    utilization=min(pct, 100.0),
+                    resets_at=None,
+                    metadata={
+                        "total_balance": total,
+                        "is_available": is_available,
+                        "currency": bal.get("currency", "USD"),
+                    },
+                )
             },
         )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 
 @dataclass
@@ -13,6 +14,7 @@ class WindowUsage:
 
     utilization: float  # 0-100
     resets_at: datetime | None = None
+    metadata: dict[str, Any] | None = None  # Provider-specific extra data
 
 
 @dataclass
