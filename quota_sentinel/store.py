@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import secrets
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -44,6 +45,7 @@ class InstanceEntry:
     state: str = "active"
     provider_fingerprints: list[str] = field(default_factory=list)
     hard_caps: dict[str, float] = field(default_factory=dict)
+    api_key: str = ""
 
 
 class Store:
@@ -105,6 +107,9 @@ class Store:
 
             fingerprints.append(fp)
 
+        # Generate unique API key: qs_ + 32 random URL-safe chars
+        api_key = f"qs_{secrets.token_urlsafe(24)}"
+
         entry = InstanceEntry(
             instance_id=instance_id,
             project_name=project_name,
@@ -112,6 +117,7 @@ class Store:
             poll_interval=poll_interval,
             provider_fingerprints=fingerprints,
             hard_caps=hard_caps or {},
+            api_key=api_key,
         )
         self.instances[instance_id] = entry
         return entry
