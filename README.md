@@ -71,20 +71,66 @@ All endpoints live under `/v1`.
 
 | Method   | Path                              | Description                                    |
 |----------|-----------------------------------|------------------------------------------------|
-| `POST`   | `/v1/instances`                   | Register a client (providers, auth, framework) |
+| `POST`   | `/v1/instances`                   | Register returns instance_id AND api_key (save this!) |
 | `DELETE`  | `/v1/instances/{id}`             | Deregister instance                            |
 | `PATCH`  | `/v1/instances/{id}/heartbeat`    | Keep-alive with optional state update          |
 
 ### Status & monitoring
 
-| Method  | Path                  | Description                                        |
-|---------|-----------------------|----------------------------------------------------|
-| `GET`   | `/v1/status`          | Global state (all instances, providers, allocations)|
-| `GET`   | `/v1/status/{id}`     | Single-instance TOKEN_STATUS with recommendation   |
-| `GET`   | `/v1/providers`       | Provider summary (useful for StreamDeck, dashboards)|
-| `GET`   | `/v1/providers/{name}`| Detailed provider info with subscriber list        |
-| `POST`  | `/v1/poll`            | Trigger immediate repoll                           |
-| `GET`   | `/v1/health`          | Server health check                                |
+| Method  | Path                  | Description                                             |
+|---------|-----------------------|---------------------------------------------------------|
+| `GET`   | `/v1/status`          | Instance-specific status (requires X-API-Key header)    |
+| `GET`   | `/v1/status/{id}`     | Single-instance TOKEN_STATUS with recommendation        |
+| `GET`   | `/v1/providers`       | Instance providers (requires X-API-Key header)          |
+| `GET`   | `/v1/providers/{name}`| Detailed provider info with subscriber list             |
+| `POST`  | `/v1/poll`            | Trigger repoll (requires X-API-Key header)              |
+| `GET`   | `/v1/health`          | Server health check                                     |
+
+## Authentication
+
+All endpoints except `/v1/health` and `/v1/instances` require authentication
+via the `X-API-Key` header.
+
+### Register
+
+```bash
+curl -X POST http://127.0.0.1:7878/v1/instances \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_name": "my-project",
+    "framework": "opencode",
+    "auth": {
+      "opencode_auth": {
+        "deepseek-coding-plan": {"key": "sk-..."}
+      }
+    }
+  }'
+```
+
+Response:
+```json
+{
+  "instance_id": "abc123...",
+  "api_key": "qs_AbCdEfGhIjKlMnOpQrStUvWx",
+  "providers": ["deepseek"],
+  "poll_interval": 300
+}
+```
+
+**Save the api_key** - you'll need it for all subsequent requests.
+
+### Authenticated Requests
+
+```bash
+# Get status for your instance
+curl -H "X-API-Key: qs_AbCdEfGhIjKlMnOpQrStUvWx" http://127.0.0.1:7878/v1/status
+
+# Get your providers
+curl -H "X-API-Key: qs_AbCdEfGhIjKlMnOpQrStUvWx" http://127.0.0.1:7878/v1/providers
+
+# Trigger poll for your providers
+curl -X POST -H "X-API-Key: qs_AbCdEfGhIjKlMnOpQrStUvWx" http://127.0.0.1:7878/v1/poll
+```
 
 ## Providers
 
@@ -126,7 +172,7 @@ samples, overcommit factor 1.5x, heartbeat timeout 3x poll interval.
    dynamic threshold, projects minutes-to-exhaustion, and assigns health status.
 5. **Allocator divides** the hard cap budget across subscribed instances weighted
    by state (active 1.0, idle 0.3, paused 0.0) with configurable overcommit.
-6. **Clients query** `GET /v1/status/{id}` for a recommendation
+6. **Clients query** with X-API-Key header for a recommendation
    (`PROCEED` / `PROCEED_SMALL_ONLY` / `STOP`) tailored to their framework.
 
 ## License
