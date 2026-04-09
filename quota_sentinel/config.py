@@ -19,6 +19,7 @@ DEFAULT_HARD_CAPS: dict[str, float] = {
 @dataclass
 class ServerConfig:
     """Quota-sentinel server configuration."""
+
     host: str = "127.0.0.1"
     port: int = 7878
     default_poll_interval: int = 300

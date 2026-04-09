@@ -90,15 +90,19 @@ def build_instance_status(
     # Add central metadata
     all_instances = list(store.instances.values())
     total_weight = sum(
-        BudgetAllocator.ACTIVE_WEIGHT if i.state == "active"
-        else BudgetAllocator.IDLE_WEIGHT if i.state == "idle"
+        BudgetAllocator.ACTIVE_WEIGHT
+        if i.state == "active"
+        else BudgetAllocator.IDLE_WEIGHT
+        if i.state == "idle"
         else 0.0
         for i in all_instances
     ) or len(all_instances)
 
     w = (
-        BudgetAllocator.ACTIVE_WEIGHT if inst.state == "active"
-        else BudgetAllocator.IDLE_WEIGHT if inst.state == "idle"
+        BudgetAllocator.ACTIVE_WEIGHT
+        if inst.state == "active"
+        else BudgetAllocator.IDLE_WEIGHT
+        if inst.state == "idle"
         else 0.0
     )
 
@@ -142,7 +146,8 @@ async def run_loop(store: Store, config: ServerConfig) -> None:
 
             logger.info(
                 "Poll done: %d providers, %d instances",
-                len(results), len(instances),
+                len(results),
+                len(instances),
             )
         else:
             logger.debug("No providers registered, skipping poll")

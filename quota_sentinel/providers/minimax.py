@@ -9,7 +9,9 @@ from datetime import UTC, datetime
 from quota_sentinel.providers.base import UsageProvider, UsageResult, WindowUsage
 from quota_sentinel.providers.http import http_get
 
-MINIMAX_REMAINS_URL = "https://platform.minimax.io/v1/api/openplatform/coding_plan/remains"
+MINIMAX_REMAINS_URL = (
+    "https://platform.minimax.io/v1/api/openplatform/coding_plan/remains"
+)
 
 
 class MiniMaxUsageProvider(UsageProvider):
@@ -29,14 +31,19 @@ class MiniMaxUsageProvider(UsageProvider):
 
         url = f"{MINIMAX_REMAINS_URL}?GroupId={self.group_id}"
         try:
-            data = http_get(url, headers={
-                "accept": "application/json, text/plain, */*",
-                "authorization": f"Bearer {self.api_token}",
-                "referer": "https://platform.minimax.io/user-center/payment/coding-plan",
-            })
+            data = http_get(
+                url,
+                headers={
+                    "accept": "application/json, text/plain, */*",
+                    "authorization": f"Bearer {self.api_token}",
+                    "referer": "https://platform.minimax.io/user-center/payment/coding-plan",
+                },
+            )
         except urllib.error.HTTPError as e:
             error_map = {401: "auth failed", 429: "rate limited"}
-            return UsageResult(provider=self.name, error=error_map.get(e.code, f"HTTP {e.code}"))
+            return UsageResult(
+                provider=self.name, error=error_map.get(e.code, f"HTTP {e.code}")
+            )
         except Exception as e:
             return UsageResult(provider=self.name, error=str(e))
 
@@ -49,9 +56,17 @@ class MiniMaxUsageProvider(UsageProvider):
         for model in data.get("model_remains", []):
             mname = model.get("model_name", "?")
             lower = mname.lower()
-            if any(kw in lower for kw in (
-                "hailuo", "speech", "music", "image", "video", "audio",
-            )):
+            if any(
+                kw in lower
+                for kw in (
+                    "hailuo",
+                    "speech",
+                    "music",
+                    "image",
+                    "video",
+                    "audio",
+                )
+            ):
                 continue
             short = mname.replace("MiniMax-", "MM-").replace("minimax-", "mm-")
 

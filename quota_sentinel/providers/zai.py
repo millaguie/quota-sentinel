@@ -26,10 +26,14 @@ class ZaiUsageProvider(UsageProvider):
             return UsageResult(provider=self.name, error="no token")
 
         try:
-            data = http_get(ZAI_QUOTA_URL, headers={"Authorization": f"Bearer {self.api_token}"})
+            data = http_get(
+                ZAI_QUOTA_URL, headers={"Authorization": f"Bearer {self.api_token}"}
+            )
         except urllib.error.HTTPError as e:
             error_map = {401: "auth failed", 429: "rate limited"}
-            return UsageResult(provider=self.name, error=error_map.get(e.code, f"HTTP {e.code}"))
+            return UsageResult(
+                provider=self.name, error=error_map.get(e.code, f"HTTP {e.code}")
+            )
         except Exception as e:
             return UsageResult(provider=self.name, error=str(e))
 

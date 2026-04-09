@@ -55,10 +55,13 @@ class ClaudeUsageProvider(UsageProvider):
                 return UsageResult(provider=self.name, error="token refresh failed")
 
         try:
-            data = http_get(CLAUDE_USAGE_URL, headers={
-                "Authorization": f"Bearer {self.access_token}",
-                "anthropic-beta": "oauth-2025-04-20",
-            })
+            data = http_get(
+                CLAUDE_USAGE_URL,
+                headers={
+                    "Authorization": f"Bearer {self.access_token}",
+                    "anthropic-beta": "oauth-2025-04-20",
+                },
+            )
         except urllib.error.HTTPError as e:
             if e.code == 429:
                 return UsageResult(provider=self.name, error="rate limited")
@@ -90,14 +93,19 @@ class ClaudeUsageProvider(UsageProvider):
         if not self.refresh_token:
             return False
         try:
-            data = http_post_json(CLAUDE_TOKEN_REFRESH_URL, {
-                "grant_type": "refresh_token",
-                "refresh_token": self.refresh_token,
-                "client_id": CLAUDE_OAUTH_CLIENT_ID,
-            })
+            data = http_post_json(
+                CLAUDE_TOKEN_REFRESH_URL,
+                {
+                    "grant_type": "refresh_token",
+                    "refresh_token": self.refresh_token,
+                    "client_id": CLAUDE_OAUTH_CLIENT_ID,
+                },
+            )
             self.access_token = data["access_token"]
             self.refresh_token = data["refresh_token"]
-            self.expires_at = int(time.time() * 1000) + data.get("expires_in", 3600) * 1000
+            self.expires_at = (
+                int(time.time() * 1000) + data.get("expires_in", 3600) * 1000
+            )
             logger.info("Claude OAuth token refreshed")
             return True
         except Exception as e:

@@ -46,18 +46,25 @@ class CopilotUsageProvider(UsageProvider):
         )
 
         try:
-            data = http_get(url, headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {self.token}",
-                "X-GitHub-Api-Version": "2026-03-10",
-            })
+            data = http_get(
+                url,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {self.token}",
+                    "X-GitHub-Api-Version": "2026-03-10",
+                },
+            )
         except urllib.error.HTTPError as e:
             error_map = {401: "auth failed", 403: "no permission", 429: "rate limited"}
-            return UsageResult(provider=self.name, error=error_map.get(e.code, f"HTTP {e.code}"))
+            return UsageResult(
+                provider=self.name, error=error_map.get(e.code, f"HTTP {e.code}")
+            )
         except Exception as e:
             return UsageResult(provider=self.name, error=str(e))
 
-        total_used = sum(item.get("grossQuantity", 0) for item in data.get("usageItems", []))
+        total_used = sum(
+            item.get("grossQuantity", 0) for item in data.get("usageItems", [])
+        )
         utilization = (total_used / self.allowance * 100) if self.allowance > 0 else 0
 
         if now.month == 12:
@@ -67,5 +74,9 @@ class CopilotUsageProvider(UsageProvider):
 
         return UsageResult(
             provider=self.name,
-            windows={"monthly": WindowUsage(utilization=min(utilization, 100), resets_at=resets_at)},
+            windows={
+                "monthly": WindowUsage(
+                    utilization=min(utilization, 100), resets_at=resets_at
+                )
+            },
         )

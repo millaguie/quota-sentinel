@@ -84,7 +84,10 @@ OPENAPI_BASE: dict = {
                         "properties": {
                             "accessToken": {"type": "string"},
                             "refreshToken": {"type": "string"},
-                            "expiresAt": {"type": "number", "description": "Unix timestamp."},
+                            "expiresAt": {
+                                "type": "number",
+                                "description": "Unix timestamp.",
+                            },
                         },
                     },
                     "github_token": {"type": "string"},
@@ -136,7 +139,11 @@ OPENAPI_BASE: dict = {
                         "nullable": True,
                         "description": "Minutes until hard cap; null if steady/declining.",
                     },
-                    "resets_at": {"type": "string", "format": "date-time", "nullable": True},
+                    "resets_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "nullable": True,
+                    },
                     "status": {"$ref": "#/components/schemas/HealthStatus"},
                 },
             },
@@ -144,9 +151,14 @@ OPENAPI_BASE: dict = {
             "InstanceStatus": {
                 "type": "object",
                 "required": [
-                    "timestamp", "framework", "overall_status",
-                    "recommendation", "message", "providers",
-                    "all_exhausted", "central_watchdog",
+                    "timestamp",
+                    "framework",
+                    "overall_status",
+                    "recommendation",
+                    "message",
+                    "providers",
+                    "all_exhausted",
+                    "central_watchdog",
                 ],
                 "properties": {
                     "timestamp": {"type": "string", "format": "date-time"},
@@ -182,7 +194,11 @@ OPENAPI_BASE: dict = {
                         "required": ["active_instances", "budget_weight", "mode"],
                         "properties": {
                             "active_instances": {"type": "integer"},
-                            "budget_weight": {"type": "number", "minimum": 0, "maximum": 1},
+                            "budget_weight": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1,
+                            },
                             "mode": {"type": "string", "const": "centralized"},
                         },
                     },
@@ -197,7 +213,9 @@ OPENAPI_BASE: dict = {
                     "error": {"type": "string"},
                     "windows": {
                         "type": "object",
-                        "additionalProperties": {"$ref": "#/components/schemas/WindowStatus"},
+                        "additionalProperties": {
+                            "$ref": "#/components/schemas/WindowStatus"
+                        },
                     },
                 },
             },

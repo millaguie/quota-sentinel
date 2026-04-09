@@ -10,6 +10,7 @@ from datetime import datetime
 @dataclass
 class WindowUsage:
     """Usage data for a single rate-limit window."""
+
     utilization: float  # 0-100
     resets_at: datetime | None = None
 
@@ -17,6 +18,7 @@ class WindowUsage:
 @dataclass
 class UsageResult:
     """Normalized usage data from any provider."""
+
     provider: str
     windows: dict[str, WindowUsage] = field(default_factory=dict)
     error: str | None = None

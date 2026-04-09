@@ -34,7 +34,9 @@ class DeepSeekUsageProvider(UsageProvider):
             )
         except urllib.error.HTTPError as e:
             error_map = {401: "auth failed", 429: "rate limited"}
-            return UsageResult(provider=self.name, error=error_map.get(e.code, f"HTTP {e.code}"))
+            return UsageResult(
+                provider=self.name, error=error_map.get(e.code, f"HTTP {e.code}")
+            )
         except Exception as e:
             return UsageResult(provider=self.name, error=str(e))
 
@@ -56,5 +58,7 @@ class DeepSeekUsageProvider(UsageProvider):
 
         return UsageResult(
             provider=self.name,
-            windows={"balance": WindowUsage(utilization=min(pct, 100.0), resets_at=None)},
+            windows={
+                "balance": WindowUsage(utilization=min(pct, 100.0), resets_at=None)
+            },
         )

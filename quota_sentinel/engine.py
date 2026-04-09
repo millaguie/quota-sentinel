@@ -12,7 +12,7 @@ from quota_sentinel.providers.base import UsageResult
 
 @dataclass
 class _Sample:
-    timestamp: float   # time.time()
+    timestamp: float  # time.time()
     utilization: float  # 0-100
 
 
@@ -38,7 +38,9 @@ class VelocityTracker:
         t_mean = sum(s.timestamp for s in self._samples) / n
         u_mean = sum(s.utilization for s in self._samples) / n
 
-        num = sum((s.timestamp - t_mean) * (s.utilization - u_mean) for s in self._samples)
+        num = sum(
+            (s.timestamp - t_mean) * (s.utilization - u_mean) for s in self._samples
+        )
         den = sum((s.timestamp - t_mean) ** 2 for s in self._samples)
 
         if den == 0:
@@ -132,7 +134,9 @@ def evaluate(
             windows_out[wname] = {
                 "utilization": round(wdata.utilization, 1),
                 "velocity_pct_per_hour": round(vel, 1),
-                "projected_exhaustion_min": round(exhaust_min) if exhaust_min is not None else None,
+                "projected_exhaustion_min": round(exhaust_min)
+                if exhaust_min is not None
+                else None,
                 "resets_at": wdata.resets_at.isoformat() if wdata.resets_at else None,
                 "status": w_status,
             }
@@ -141,8 +145,14 @@ def evaluate(
                 prov_worst = w_status
 
             if w_status in ("YELLOW", "RED"):
-                time_str = f"~{round(exhaust_min)}min left" if exhaust_min is not None else "growing"
-                messages.append(f"{prov_name} {wname} at {wdata.utilization:.0f}% ({time_str})")
+                time_str = (
+                    f"~{round(exhaust_min)}min left"
+                    if exhaust_min is not None
+                    else "growing"
+                )
+                messages.append(
+                    f"{prov_name} {wname} at {wdata.utilization:.0f}% ({time_str})"
+                )
 
         provider_statuses[prov_name] = {"status": prov_worst, "windows": windows_out}
 
@@ -151,9 +161,19 @@ def evaluate(
 
     # Recommendation
     active_providers = [p for p, r in results.items() if not r.error]
-    red_providers = [p for p in active_providers if provider_statuses.get(p, {}).get("status") == "RED"]
-    green_providers = [p for p in active_providers if provider_statuses.get(p, {}).get("status") == "GREEN"]
-    all_exhausted = len(red_providers) == len(active_providers) and len(active_providers) > 0
+    red_providers = [
+        p
+        for p in active_providers
+        if provider_statuses.get(p, {}).get("status") == "RED"
+    ]
+    green_providers = [
+        p
+        for p in active_providers
+        if provider_statuses.get(p, {}).get("status") == "GREEN"
+    ]
+    all_exhausted = (
+        len(red_providers) == len(active_providers) and len(active_providers) > 0
+    )
 
     if framework == "claude":
         if worst_status == "RED":
@@ -167,7 +187,9 @@ def evaluate(
             recommendation = "STOP"
         elif worst_status == "RED" and green_providers:
             recommendation = "PROCEED"
-            messages.append(f"OpenCode will auto-retry with: {', '.join(green_providers)}")
+            messages.append(
+                f"OpenCode will auto-retry with: {', '.join(green_providers)}"
+            )
         elif worst_status == "YELLOW":
             recommendation = "PROCEED_SMALL_ONLY"
         else:

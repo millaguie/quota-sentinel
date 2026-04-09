@@ -20,7 +20,9 @@ def cli() -> None:
 @cli.command()
 @click.option("--host", default="127.0.0.1", help="Bind address")
 @click.option("--port", default=7878, type=int, help="Bind port")
-@click.option("--poll-interval", default=300, type=int, help="Default poll interval (seconds)")
+@click.option(
+    "--poll-interval", default=300, type=int, help="Default poll interval (seconds)"
+)
 def start(host: str, port: int, poll_interval: int) -> None:
     """Start the quota-sentinel daemon."""
     import logging

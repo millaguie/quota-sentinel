@@ -23,6 +23,7 @@ def _fingerprint(provider_name: str, api_key: str) -> str:
 @dataclass
 class ProviderEntry:
     """A unique provider+key in the pool."""
+
     provider: UsageProvider
     provider_name: str
     fingerprint: str
@@ -33,6 +34,7 @@ class ProviderEntry:
 @dataclass
 class InstanceEntry:
     """A registered client instance."""
+
     instance_id: str
     project_name: str
     framework: str
@@ -52,9 +54,11 @@ class Store:
     """
 
     def __init__(self, velocity_window: int = 10):
-        self.providers: dict[str, ProviderEntry] = {}     # key: "name:fingerprint"
-        self.instances: dict[str, InstanceEntry] = {}     # key: instance_id
-        self.velocities: dict[str, dict[str, VelocityTracker]] = {}  # provider_name → window → tracker
+        self.providers: dict[str, ProviderEntry] = {}  # key: "name:fingerprint"
+        self.instances: dict[str, InstanceEntry] = {}  # key: instance_id
+        self.velocities: dict[
+            str, dict[str, VelocityTracker]
+        ] = {}  # provider_name → window → tracker
         self.velocity_window = velocity_window
         self.poll_event = asyncio.Event()
         self._started_at = time.time()
@@ -148,10 +152,7 @@ class Store:
 
     def providers_for_instance(self, instance_id: str) -> list[ProviderEntry]:
         """Get providers that a specific instance is subscribed to."""
-        return [
-            pe for pe in self.providers.values()
-            if instance_id in pe.subscribers
-        ]
+        return [pe for pe in self.providers.values() if instance_id in pe.subscribers]
 
     def unique_providers(self) -> list[ProviderEntry]:
         """All providers in the pool."""
@@ -159,10 +160,13 @@ class Store:
 
     def provider_names_for_instance(self, instance_id: str) -> list[str]:
         """Get provider names that a specific instance subscribed."""
-        return sorted({
-            pe.provider_name for pe in self.providers.values()
-            if instance_id in pe.subscribers
-        })
+        return sorted(
+            {
+                pe.provider_name
+                for pe in self.providers.values()
+                if instance_id in pe.subscribers
+            }
+        )
 
     # ── Poll control ────────────────────────────────────────────────
 
@@ -189,7 +193,9 @@ class Store:
                 dead.append(iid)
                 logger.info(
                     "GC: instance %s (%s) — no heartbeat for %.0fs",
-                    iid, inst.project_name, age,
+                    iid,
+                    inst.project_name,
+                    age,
                 )
 
         for iid in dead:
@@ -205,6 +211,8 @@ class Store:
             "uptime": round(self.uptime()),
             "instances": len(self.instances),
             "providers": len(self.providers),
-            "unique_provider_names": sorted({pe.provider_name for pe in self.providers.values()}),
+            "unique_provider_names": sorted(
+                {pe.provider_name for pe in self.providers.values()}
+            ),
             "effective_poll_interval": self.effective_poll_interval(),
         }

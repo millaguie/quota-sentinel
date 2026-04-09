@@ -65,7 +65,9 @@ _UA = (
 
 
 def _http_get(
-    url: str, headers: dict[str, str], timeout: int = 10,
+    url: str,
+    headers: dict[str, str],
+    timeout: int = 10,
 ) -> dict[str, Any]:
     hdrs = {"User-Agent": _UA}
     hdrs.update(headers)
@@ -141,10 +143,13 @@ class ClaudeUsageProvider(UsageProvider):
             if not oauth:
                 return UsageResult(provider=self.name, error="token refresh failed")
         try:
-            data = _http_get(self.USAGE_URL, headers={
-                "Authorization": f"Bearer {oauth['accessToken']}",
-                "anthropic-beta": "oauth-2025-04-20",
-            })
+            data = _http_get(
+                self.USAGE_URL,
+                headers={
+                    "Authorization": f"Bearer {oauth['accessToken']}",
+                    "anthropic-beta": "oauth-2025-04-20",
+                },
+            )
         except urllib.error.HTTPError as e:
             return UsageResult(provider=self.name, error=f"HTTP {e.code}")
         except Exception as e:  # noqa: BLE001
@@ -161,7 +166,8 @@ class ClaudeUsageProvider(UsageProvider):
                     except (ValueError, TypeError):
                         pass
                 windows[key] = WindowUsage(
-                    float(b.get("utilization", 0) or 0), ra,
+                    float(b.get("utilization", 0) or 0),
+                    ra,
                 )
         return UsageResult(provider=self.name, windows=windows)
 
@@ -184,11 +190,14 @@ class ClaudeUsageProvider(UsageProvider):
         if not rt:
             return None
         try:
-            data = _http_post_json(self.REFRESH_URL, {
-                "grant_type": "refresh_token",
-                "refresh_token": rt,
-                "client_id": self.CLIENT_ID,
-            })
+            data = _http_post_json(
+                self.REFRESH_URL,
+                {
+                    "grant_type": "refresh_token",
+                    "refresh_token": rt,
+                    "client_id": self.CLIENT_ID,
+                },
+            )
             fd = open(self.creds_path, "r+")  # noqa: SIM115
             fcntl.flock(fd, fcntl.LOCK_EX)
             try:
@@ -241,11 +250,14 @@ class CopilotUsageProvider(UsageProvider):
             f"?year={now.year}&month={now.month}"
         )
         try:
-            data = _http_get(url, headers={
-                "Accept": "application/vnd.github+json",
-                "Authorization": f"Bearer {token}",
-                "X-GitHub-Api-Version": "2026-03-10",
-            })
+            data = _http_get(
+                url,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "Authorization": f"Bearer {token}",
+                    "X-GitHub-Api-Version": "2026-03-10",
+                },
+            )
         except urllib.error.HTTPError as e:
             error_map = {
                 401: "auth failed",
@@ -274,7 +286,9 @@ class CopilotUsageProvider(UsageProvider):
         try:
             r = subprocess.run(
                 ["gh", "auth", "token"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             return r.stdout.strip() if r.returncode == 0 else ""
         except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -296,7 +310,9 @@ class ZaiUsageProvider(UsageProvider):
 
     def fetch(self) -> UsageResult:
         token = self.api_token or _oc_key(
-            _read_oc_auth(self.auth_path), "zai-coding-plan", "zai",
+            _read_oc_auth(self.auth_path),
+            "zai-coding-plan",
+            "zai",
         )
         if not token:
             return UsageResult(provider=self.name, error="no token")
@@ -327,12 +343,14 @@ class ZaiUsageProvider(UsageProvider):
             if lim.get("nextResetTime"):
                 try:
                     ra = datetime.fromtimestamp(
-                        lim["nextResetTime"] / 1000, tz=UTC,
+                        lim["nextResetTime"] / 1000,
+                        tz=UTC,
                     )
                 except (ValueError, TypeError, OSError):
                     pass
             windows[wname] = WindowUsage(
-                float(lim.get("percentage", 0) or 0), ra,
+                float(lim.get("percentage", 0) or 0),
+                ra,
             )
         return UsageResult(provider=self.name, windows=windows)
 
@@ -355,7 +373,9 @@ class MiniMaxUsageProvider(UsageProvider):
 
     def fetch(self) -> UsageResult:
         token = self.api_token or _oc_key(
-            _read_oc_auth(self.auth_path), "minimax-coding-plan", "minimax",
+            _read_oc_auth(self.auth_path),
+            "minimax-coding-plan",
+            "minimax",
         )
         if not token:
             return UsageResult(provider=self.name, error="no token")
@@ -364,11 +384,14 @@ class MiniMaxUsageProvider(UsageProvider):
 
         url = f"{self.REMAINS_URL}?GroupId={self.group_id}"
         try:
-            data = _http_get(url, headers={
-                "accept": "application/json, text/plain, */*",
-                "authorization": f"Bearer {token}",
-                "referer": "https://platform.minimax.io/user-center/payment/coding-plan",
-            })
+            data = _http_get(
+                url,
+                headers={
+                    "accept": "application/json, text/plain, */*",
+                    "authorization": f"Bearer {token}",
+                    "referer": "https://platform.minimax.io/user-center/payment/coding-plan",
+                },
+            )
         except urllib.error.HTTPError as e:
             error_map = {401: "auth failed", 429: "rate limited"}
             return UsageResult(
@@ -388,9 +411,17 @@ class MiniMaxUsageProvider(UsageProvider):
             mname = model.get("model_name", "?")
             # Skip non-text models (video, audio, image, music)
             lower = mname.lower()
-            if any(kw in lower for kw in (
-                "hailuo", "speech", "music", "image", "video", "audio",
-            )):
+            if any(
+                kw in lower
+                for kw in (
+                    "hailuo",
+                    "speech",
+                    "music",
+                    "image",
+                    "video",
+                    "audio",
+                )
+            ):
                 continue
             # Shorten model names
             short = mname.replace("MiniMax-", "MM-").replace("minimax-", "mm-")
@@ -421,7 +452,8 @@ class MiniMaxUsageProvider(UsageProvider):
         if remains_ms <= 0:
             return None
         return datetime.fromtimestamp(
-            time.time() + remains_ms / 1000, tz=UTC,
+            time.time() + remains_ms / 1000,
+            tz=UTC,
         )
 
 
@@ -447,7 +479,9 @@ class DeepSeekUsageProvider(UsageProvider):
 
     def fetch(self) -> UsageResult:
         token = self.api_token or _oc_key(
-            _read_oc_auth(self.auth_path), "deepseek-coding-plan", "deepseek",
+            _read_oc_auth(self.auth_path),
+            "deepseek-coding-plan",
+            "deepseek",
         )
         if not token:
             return UsageResult(provider=self.name, error="no token")
@@ -526,7 +560,10 @@ class AlibabaUsageProvider(UsageProvider):
     def fetch(self) -> UsageResult:
         token = self.api_token or _oc_key(
             _read_oc_auth(self.auth_path),
-            "bailian-coding-plan", "alibaba-coding-plan", "dashscope", "alibaba",
+            "bailian-coding-plan",
+            "alibaba-coding-plan",
+            "dashscope",
+            "alibaba",
         )
         if not token:
             return UsageResult(provider=self.name, error="no token")
@@ -546,11 +583,16 @@ class AlibabaUsageProvider(UsageProvider):
             },
         }
         try:
-            data = _http_post_json(url, body, headers={
-                "Authorization": f"Bearer {token}",
-                "x-api-key": token,
-                "X-DashScope-API-Key": token,
-            }, timeout=15)
+            data = _http_post_json(
+                url,
+                body,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "x-api-key": token,
+                    "X-DashScope-API-Key": token,
+                },
+                timeout=15,
+            )
         except urllib.error.HTTPError as e:
             error_map = {401: "auth failed", 429: "rate limited"}
             return UsageResult(
@@ -632,7 +674,8 @@ class AlibabaUsageProvider(UsageProvider):
                 for item in v:
                     if isinstance(item, dict):
                         result = AlibabaUsageProvider._search_quota(
-                            item, depth + 1,
+                            item,
+                            depth + 1,
                         )
                         if result:
                             return result
@@ -722,7 +765,10 @@ def _get_cap(provider: str, window: str, caps: dict[str, float]) -> float:
 
 
 def _window_status(
-    util: float, vel: float, cap: float, margin_min: float,
+    util: float,
+    vel: float,
+    cap: float,
+    margin_min: float,
 ) -> str:
     if util >= cap:
         return "RED"
@@ -929,18 +975,24 @@ class TokenWatchdog:
         # Required fields per provider (field, hint)
         requirements: dict[str, list[tuple[str, str]]] = {
             "minimax": [
-                ("group_id", (
-                    "Get it from https://platform.minimax.io → user center. "
-                    "Add to watchdog/config.json: "
-                    '{"providers": {"minimax": {"group_id": "YOUR_ID"}}}'
-                )),
+                (
+                    "group_id",
+                    (
+                        "Get it from https://platform.minimax.io → user center. "
+                        "Add to watchdog/config.json: "
+                        '{"providers": {"minimax": {"group_id": "YOUR_ID"}}}'
+                    ),
+                ),
             ],
             "copilot": [
-                ("github_username", (
-                    "Install gh CLI (https://cli.github.com) for auto-detection, "
-                    "or add to watchdog/config.json: "
-                    '{"providers": {"copilot": {"github_username": "YOU"}}}'
-                )),
+                (
+                    "github_username",
+                    (
+                        "Install gh CLI (https://cli.github.com) for auto-detection, "
+                        "or add to watchdog/config.json: "
+                        '{"providers": {"copilot": {"github_username": "YOU"}}}'
+                    ),
+                ),
             ],
         }
         for pname, fields in requirements.items():
@@ -951,7 +1003,9 @@ class TokenWatchdog:
                 if not pcfg.get(field_name):
                     logger.warning(
                         "%s: missing '%s' — provider will not work. %s",
-                        pname, field_name, hint,
+                        pname,
+                        field_name,
+                        hint,
                     )
 
     @staticmethod
@@ -959,7 +1013,9 @@ class TokenWatchdog:
         try:
             r = subprocess.run(
                 ["gh", "api", "user", "--jq", ".login"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if r.returncode == 0 and r.stdout.strip():
                 return r.stdout.strip()
@@ -985,7 +1041,11 @@ class TokenWatchdog:
                     self.velocities[p.name][wn].add(wd.utilization)
 
         status = evaluate(
-            results, self.velocities, self.framework, self.caps, self.margin,
+            results,
+            self.velocities,
+            self.framework,
+            self.caps,
+            self.margin,
         )
 
         # Detailed per-provider log
@@ -1003,7 +1063,10 @@ class TokenWatchdog:
                     f"{wn}={wd['utilization']:.0f}%{vel_str}{exh_str}",
                 )
             logger.info(
-                "  %s: %s — %s", pname, pstatus, ", ".join(parts),
+                "  %s: %s — %s",
+                pname,
+                pstatus,
+                ", ".join(parts),
             )
 
         # Summary line
@@ -1125,9 +1188,14 @@ class TokenWatchdog:
 
         try:
             if self._central_available():
-                self._run_client_mode(pid_file, poll_now, stop,
-                                      lambda: poll_now, lambda: stop,
-                                      lambda v: None)
+                self._run_client_mode(
+                    pid_file,
+                    poll_now,
+                    stop,
+                    lambda: poll_now,
+                    lambda: stop,
+                    lambda v: None,
+                )
             else:
                 self._run_local_mode(pid_file, lambda: poll_now, lambda: stop)
         finally:
@@ -1142,7 +1210,9 @@ class TokenWatchdog:
         """Standard local mode — polls APIs and writes TOKEN_STATUS.json."""
         logger.info(
             "Watchdog LOCAL: %d providers, poll %ds, framework=%s, pid=%d",
-            len(self.providers), self.poll_interval, self.framework,
+            len(self.providers),
+            self.poll_interval,
+            self.framework,
             os.getpid(),
         )
         check_central_counter = 0
@@ -1188,7 +1258,8 @@ class TokenWatchdog:
         """Entry point for client mode when central is detected at startup."""
         logger.info(
             "Watchdog CLIENT: project=%s, central pid=%s",
-            self.project_dir.name, self._central_pid(),
+            self.project_dir.name,
+            self._central_pid(),
         )
         self._register()
 
@@ -1224,10 +1295,14 @@ class TokenWatchdog:
             if poll_now_ref[0]:
                 poll_now_ref[0] = False
                 if self._forward_sigusr1():
-                    logger.info("SIGUSR1 forwarded to central — Ralph will read fresh status")
+                    logger.info(
+                        "SIGUSR1 forwarded to central — Ralph will read fresh status"
+                    )
                 else:
                     # Central died — fall back to local mode
-                    logger.warning("Central watchdog unreachable — reverting to local mode")
+                    logger.warning(
+                        "Central watchdog unreachable — reverting to local mode"
+                    )
                     return
 
             # Periodically check central is still alive
