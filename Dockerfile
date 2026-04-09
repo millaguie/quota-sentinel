@@ -1,6 +1,7 @@
 FROM python:3.12-slim AS build
 WORKDIR /app
 COPY pyproject.toml .
+COPY README.md .
 COPY quota_sentinel/ quota_sentinel/
 RUN pip install --no-cache-dir .
 
