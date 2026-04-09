@@ -19,7 +19,7 @@ from quota_sentinel.config import ServerConfig
 from quota_sentinel.daemon import build_instance_status, run_loop
 from quota_sentinel.docs import openapi_schema, redoc_ui
 from quota_sentinel.providers import AUTH_KEY_TO_PROVIDER, create_provider
-from quota_sentinel.store import Store
+from quota_sentinel.store import InstanceEntry, Store
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,29 @@ def _get_store() -> Store:
 def _get_config() -> ServerConfig:
     assert _config is not None
     return _config
+
+
+def _get_instance_from_request(request: Request) -> InstanceEntry | None:
+    """Look up instance by X-API-Key header.
+
+    Returns the InstanceEntry if a valid API key is provided, None otherwise.
+    """
+    api_key = request.headers.get("X-API-Key")
+    if not api_key:
+        return None
+
+    store = _get_store()
+    for entry in store.instances.values():
+        if entry.api_key == api_key:
+            return entry
+    return None
+
+
+def _require_auth(request: Request) -> JSONResponse | None:
+    """Check auth and return 401 response if invalid, None if valid."""
+    if _get_instance_from_request(request) is None:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+    return None
 
 
 # ── Instance registration ──────────────────────────────────────────
@@ -188,6 +211,7 @@ async def register_instance(request: Request) -> JSONResponse:
     return JSONResponse(
         {
             "instance_id": instance_id,
+            "api_key": entry.api_key,
             "providers": store.provider_names_for_instance(instance_id),
             "poll_interval": entry.poll_interval,
         },
@@ -246,6 +270,12 @@ async def heartbeat(request: Request) -> JSONResponse:
           application/json:
             schema:
               $ref: '#/components/schemas/StatusOk'
+      401:
+        description: Unauthorized.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
       404:
         description: Instance not found.
         content:
@@ -253,6 +283,10 @@ async def heartbeat(request: Request) -> JSONResponse:
             schema:
               $ref: '#/components/schemas/Error'
     """
+    auth_error = _require_auth(request)
+    if auth_error:
+        return auth_error
+
     store = _get_store()
     instance_id = request.path_params["id"]
     try:
@@ -277,7 +311,17 @@ async def global_status(request: Request) -> JSONResponse:
     responses:
       200:
         description: Current global state.
+      401:
+        description: Unauthorized.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
     """
+    auth_error = _require_auth(request)
+    if auth_error:
+        return auth_error
+
     store = _get_store()
 
     summary = store.summary()
@@ -382,7 +426,17 @@ async def providers_summary(request: Request) -> JSONResponse:
               type: object
               additionalProperties:
                 $ref: '#/components/schemas/ProviderSummary'
+      401:
+        description: Unauthorized.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
     """
+    auth_error = _require_auth(request)
+    if auth_error:
+        return auth_error
+
     store = _get_store()
     config = _get_config()
 
@@ -481,7 +535,17 @@ async def trigger_poll(request: Request) -> JSONResponse:
     responses:
       200:
         description: Poll triggered.
+      401:
+        description: Unauthorized.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
     """
+    auth_error = _require_auth(request)
+    if auth_error:
+        return auth_error
+
     store = _get_store()
     store.trigger_poll()
     return JSONResponse({"status": "poll triggered"})

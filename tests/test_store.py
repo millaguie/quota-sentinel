@@ -116,6 +116,27 @@ class TestInstanceEntry:
         )
         assert entry.hard_caps == {}
 
+    def test_default_api_key_is_empty_string(self):
+        """Default api_key is empty string."""
+        entry = InstanceEntry(
+            instance_id="inst-123",
+            project_name="test-project",
+            framework="opencode",
+            poll_interval=60,
+        )
+        assert entry.api_key == ""
+
+    def test_api_key_can_be_set(self):
+        """api_key can be set explicitly."""
+        entry = InstanceEntry(
+            instance_id="inst-123",
+            project_name="test-project",
+            framework="opencode",
+            poll_interval=60,
+            api_key="qs_testkey123",
+        )
+        assert entry.api_key == "qs_testkey123"
+
 
 # =============================================================================
 # ProviderEntry Tests
@@ -410,6 +431,49 @@ class TestStoreRegisterInstance:
         )
 
         assert entry.hard_caps == {}
+
+    def test_generates_api_key_on_registration(self):
+        """Generates api_key with qs_ prefix and 32 random chars."""
+        store = Store()
+        mock_provider = MagicMock(spec=UsageProvider)
+
+        entry = store.register_instance(
+            instance_id="inst-123",
+            project_name="my-project",
+            framework="opencode",
+            poll_interval=60,
+            providers={"claude": mock_provider},
+            keys={"claude": "api_key"},
+        )
+
+        assert entry.api_key.startswith("qs_")
+        # qs_ prefix (3 chars) + 32 random chars = 35 total minimum
+        assert len(entry.api_key) >= 35
+
+    def test_api_keys_are_unique_per_registration(self):
+        """Each registration gets a unique api_key."""
+        store = Store()
+        mock_provider = MagicMock(spec=UsageProvider)
+
+        entry1 = store.register_instance(
+            instance_id="inst-1",
+            project_name="project-1",
+            framework="opencode",
+            poll_interval=60,
+            providers={"claude": mock_provider},
+            keys={"claude": "api_key_1"},
+        )
+
+        entry2 = store.register_instance(
+            instance_id="inst-2",
+            project_name="project-2",
+            framework="opencode",
+            poll_interval=60,
+            providers={"claude": mock_provider},
+            keys={"claude": "api_key_2"},
+        )
+
+        assert entry1.api_key != entry2.api_key
 
     def test_stores_provider_fingerprints_in_entry(self):
         """Stores provider fingerprints in instance entry."""
