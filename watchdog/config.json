@@ -1,0 +1,13 @@
+{
+  "framework": "both",
+  "poll_interval": 300,
+  "safety_margin_min": 30,
+  "velocity_window": 10,
+  "status_file": "TOKEN_STATUS.json",
+  "hard_caps": {
+    "claude_five_hour": 80.0,
+    "claude_seven_day": 90.0,
+    "copilot_monthly": 85.0,
+    "zai_default": 80.0
+  }
+}

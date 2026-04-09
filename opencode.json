@@ -1,0 +1,196 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "github-copilot/claude-opus-4.5",
+  "instructions": ["AGENTS.md"],
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 80000
+  },
+  "agent": {
+    "build": {
+      "description": "Development agent - writes code, runs tests, builds the project",
+      "model": "github-copilot/claude-opus-4.5",
+      "temperature": 0.2,
+      "prompt": "{file:./prompts/build.txt}",
+      "color": "#4CAF50",
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "*": "allow"
+        }
+      }
+    },
+    "plan": {
+      "description": "Architecture and planning agent - analyzes codebase, designs solutions, maintains ROADMAP",
+      "mode": "subagent",
+      "model": "github-copilot/claude-opus-4.6",
+      "temperature": 0.1,
+      "prompt": "{file:./prompts/plan.txt}",
+      "color": "#2196F3",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny"
+        }
+      }
+    },
+    "ralph": {
+      "description": "Autonomous loop coordinator - picks ROADMAP tasks, delegates to subagents, commits, loops",
+      "model": "minimax/MiniMax-M2.5",
+      "temperature": 0.2,
+      "prompt": "{file:./prompts/ralph.txt}",
+      "color": "#FF5733",
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "*": "allow"
+        }
+        ,
+        "task": {
+          "general": "allow",
+          "build": "allow",
+          "test": "allow",
+          "reviewer": "allow",
+          "explorer": "allow",
+          "security": "allow",
+          "docs": "allow"
+        }
+      }
+    },
+    "pm": {
+      "description": "Project manager - maintains ROADMAP, delivers builds, manages priorities, bug tracking, and agent team",
+      "model": "minimax/MiniMax-M2.5",
+      "temperature": 0.2,
+      "prompt": "{file:./prompts/pm.txt}",
+      "color": "#FFC107",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny"
+        }
+      }
+    },
+    "reviewer": {
+      "description": "Code reviewer - checks code quality, correctness, and best practices",
+      "mode": "subagent",
+      "model": "github-copilot/claude-opus-4.5",
+      "temperature": 0.1,
+      "prompt": "{file:./prompts/reviewer.txt}",
+      "color": "#9C27B0",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny"
+        }
+      }
+    },
+    "explorer": {
+      "description": "Codebase explorer - finds patterns, searches code, maps architecture",
+      "mode": "subagent",
+      "model": "github-copilot/gemini-3-flash-preview",
+      "temperature": 0.1,
+      "prompt": "{file:./prompts/explorer.txt}",
+      "color": "#FF9800",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "git *": "allow",
+          "grep *": "allow"
+        }
+      }
+    },
+    "test": {
+      "description": "Test specialist - writes tests, validates coverage, enforces quality gates",
+      "model": "github-copilot/claude-opus-4.5",
+      "temperature": 0.1,
+      "prompt": "{file:./prompts/test.txt}",
+      "color": "#8BC34A",
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "python *": "allow",
+          "git *": "allow"
+        }
+      }
+    },
+    "sre": {
+      "description": "SRE/debugger - diagnoses live system issues, analyzes logs, traces errors in running environments",
+      "model": "github-copilot/gemini-3-flash-preview",
+      "temperature": 0.1,
+      "prompt": "{file:./prompts/sre.txt}",
+      "color": "#E91E63",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "ps *": "allow",
+          "top *": "allow",
+          "journalctl *": "allow",
+          "curl *": "allow",
+          "dig *": "allow",
+          "ss *": "allow",
+          "lsof *": "allow",
+          "docker logs *": "allow",
+          "kubectl logs *": "allow",
+          "systemctl status *": "allow"
+        }
+      }
+    },
+    "security": {
+      "description": "Security auditor - reviews code, config, dependencies for vulnerabilities",
+      "mode": "subagent",
+      "model": "github-copilot/claude-opus-4.6",
+      "temperature": 0.0,
+      "prompt": "{file:./prompts/security.txt}",
+      "color": "#F44336",
+      "permission": {
+        "edit": "deny",
+        "bash": {
+          "*": "deny"
+        }
+      }
+    },
+    "docs": {
+      "description": "Documentation agent - generates and maintains docs, READMEs, API references, decision records",
+      "model": "minimax/MiniMax-M2.5",
+      "temperature": 0.3,
+      "prompt": "{file:./prompts/docs.txt}",
+      "color": "#795548",
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "git *": "allow"
+        }
+      }
+    },
+    "refactor": {
+      "description": "Refactoring specialist - improves code structure, reduces duplication, maintains behavior",
+      "model": "github-copilot/claude-opus-4.5",
+      "temperature": 0.1,
+      "prompt": "{file:./prompts/refactor.txt}",
+      "color": "#00BCD4",
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "*": "allow"
+        }
+      }
+    },
+    "devops": {
+      "description": "DevOps/infra agent - manages CI/CD, Dockerfiles, deployment configs, infrastructure",
+      "model": "minimax/MiniMax-M2.5",
+      "temperature": 0.2,
+      "prompt": "{file:./prompts/devops.txt}",
+      "color": "#607D8B",
+      "permission": {
+        "edit": "allow",
+        "bash": {
+          "docker *": "allow",
+          "git *": "allow",
+          "helm *": "allow",
+          "kubectl *": "allow"
+        }
+      }
+    }
+  }
+}

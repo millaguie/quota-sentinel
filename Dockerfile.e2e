@@ -1,0 +1,22 @@
+# E2E tests for quota-sentinel
+# Builds the image and runs client simulation tests
+
+FROM python:3.12-slim AS build
+WORKDIR /app
+COPY pyproject.toml .
+RUN pip install --no-cache-dir -e ".[dev]"
+
+FROM python:3.12-slim
+COPY --from=build /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=build /usr/local/bin/quota-sentinel /usr/local/bin/
+COPY --from=build /usr/local/lib/python3.12/site-packages/quota_sentinel /usr/local/lib/python3.12/site-packages/quota_sentinel
+
+# Install test dependencies
+RUN pip install --no-cache-dir httpx
+
+# Create test script
+RUN mkdir -p /tests
+COPY tests_e2e.py /tests/
+
+# Run tests
+CMD ["python", "/tests/tests_e2e.py"]

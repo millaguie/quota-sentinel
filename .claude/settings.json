@@ -1,0 +1,65 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Glob",
+      "Grep",
+      "Bash(git *)",
+      "Bash(npm *)",
+      "Bash(pip *)",
+      "Bash(make *)",
+      "Bash(python *)",
+      "Agent"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(curl * | *)",
+      "Bash(wget *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"[quota-sentinel] Tool: Bash\" >> .claude/audit.log"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"[quota-sentinel] File written: $CLAUDE_FILE_PATH\" >> .claude/audit.log"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "ruff format \"$CLAUDE_FILE_PATH\" 2>/dev/null; ruff check --fix \"$CLAUDE_FILE_PATH\" 2>/dev/null; true"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo \"[quota-sentinel] Session prompt at $(date -Is)\" >> .claude/audit.log"
+          }
+        ]
+      }
+    ]
+  }
+}
