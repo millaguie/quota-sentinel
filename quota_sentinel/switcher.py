@@ -16,14 +16,23 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import signal
 import subprocess
+import sys
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+_SENTINEL_DATA_DIR = Path.home() / ".local" / "share" / "quota-sentinel"
+_SENTINEL_PID_FILE = _SENTINEL_DATA_DIR / "server.pid"
+_SENTINEL_LOG_FILE = _SENTINEL_DATA_DIR / "server.log"
+_SENTINEL_START_TIMEOUT = 15  # seconds to wait for server to come up
 
 _OC_AUTH_PATH = Path.home() / ".local" / "share" / "opencode" / "auth.json"
 _CLAUDE_CREDS_PATH = Path.home() / ".claude" / ".credentials.json"
@@ -237,6 +246,103 @@ class ModelSwitcher:
 
         return auth
 
+    # ── Auto-start server ─────────────────────────────────────────────
+
+    def _parse_sentinel_addr(self) -> tuple[str, int] | None:
+        """Parse host and port from sentinel_url. Returns None if not localhost."""
+        try:
+            parsed = urllib.parse.urlparse(self.sentinel_url)
+            host = parsed.hostname or "127.0.0.1"
+            port = parsed.port or 7878
+            if host not in ("127.0.0.1", "localhost", "::1"):
+                return None
+            return host, port
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _read_pid(self) -> int | None:
+        """Read PID from file, return None if missing or stale."""
+        try:
+            pid = int(_SENTINEL_PID_FILE.read_text().strip())
+            # Check process is actually alive
+            os.kill(pid, 0)
+            return pid
+        except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError):
+            return None
+
+    def _ensure_server_running(self) -> bool:
+        """Start Quota Sentinel server if not running. Returns True when available."""
+        addr = self._parse_sentinel_addr()
+        if addr is None:
+            logger.error(
+                "Quota Sentinel not reachable at %s and auto-start only works for localhost",
+                self.sentinel_url,
+            )
+            return False
+
+        host, port = addr
+
+        # Already running (different process, e.g. another project started it)
+        if self._sentinel_available():
+            return True
+
+        # Check if there's a stale PID file
+        existing_pid = self._read_pid()
+        if existing_pid is not None:
+            logger.warning(
+                "PID file points to process %d but server not responding — removing stale PID",
+                existing_pid,
+            )
+            _SENTINEL_PID_FILE.unlink(missing_ok=True)
+
+        # Spawn the server
+        _SENTINEL_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        log_fh = _SENTINEL_LOG_FILE.open("a")
+
+        logger.info(
+            "Starting Quota Sentinel at %s:%d (log: %s)",
+            host, port, _SENTINEL_LOG_FILE,
+        )
+
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, "-m", "quota_sentinel.cli", "start",
+                 "--host", host, "--port", str(port)],
+                stdout=log_fh,
+                stderr=log_fh,
+                start_new_session=True,  # detach from our process group
+            )
+        except (FileNotFoundError, OSError) as e:
+            logger.error("Failed to spawn quota-sentinel server: %s", e)
+            log_fh.close()
+            return False
+
+        _SENTINEL_PID_FILE.write_text(f"{proc.pid}\n")
+        logger.info("Quota Sentinel spawned (PID %d)", proc.pid)
+        log_fh.close()
+
+        # Wait for it to accept connections
+        deadline = time.monotonic() + _SENTINEL_START_TIMEOUT
+        while time.monotonic() < deadline:
+            time.sleep(1)
+            if self._sentinel_available():
+                logger.info("Quota Sentinel is up")
+                return True
+            # Check it hasn't already crashed
+            if proc.poll() is not None:
+                logger.error(
+                    "Quota Sentinel exited immediately (rc=%d) — check %s",
+                    proc.returncode, _SENTINEL_LOG_FILE,
+                )
+                _SENTINEL_PID_FILE.unlink(missing_ok=True)
+                return False
+
+        logger.error(
+            "Quota Sentinel did not start within %ds — check %s",
+            _SENTINEL_START_TIMEOUT, _SENTINEL_LOG_FILE,
+        )
+        return False
+
     # ── Sentinel API ──────────────────────────────────────────────────
 
     def _sentinel_available(self) -> bool:
@@ -426,8 +532,10 @@ class ModelSwitcher:
     def run(self) -> None:
         """Run the model switcher daemon."""
         if not self._sentinel_available():
-            logger.error("Quota Sentinel not reachable at %s — aborting", self.sentinel_url)
-            return
+            logger.info("Quota Sentinel not running — attempting auto-start")
+            if not self._ensure_server_running():
+                logger.error("Could not reach or start Quota Sentinel — aborting")
+                return
 
         self._init_state()
 
