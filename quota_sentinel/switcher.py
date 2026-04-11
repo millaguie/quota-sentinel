@@ -17,12 +17,31 @@ from __future__ import annotations
 import json
 import logging
 import signal
+import subprocess
 import time
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+_OC_AUTH_PATH = Path.home() / ".local" / "share" / "opencode" / "auth.json"
+_CLAUDE_CREDS_PATH = Path.home() / ".claude" / ".credentials.json"
+
+# Maps opencode auth.json key → Sentinel provider name
+_OC_KEY_TO_PROVIDER = {
+    "zai-coding-plan": "zai",
+    "zai": "zai",
+    "github-copilot": "copilot",
+    "minimax-coding-plan": "minimax",
+    "minimax": "minimax",
+    "deepseek-coding-plan": "deepseek",
+    "deepseek": "deepseek",
+    "bailian-coding-plan": "alibaba",
+    "alibaba-coding-plan": "alibaba",
+    "dashscope": "alibaba",
+    "alibaba": "alibaba",
+}
 
 logger = logging.getLogger("model-switcher")
 
@@ -150,6 +169,74 @@ class ModelSwitcher:
         if changed:
             self.state.save(self.state_path)
 
+    # ── Auth discovery ────────────────────────────────────────────────
+
+    def _build_auth(self) -> dict[str, Any]:
+        """Build auth payload for Quota Sentinel registration.
+
+        Sources (in priority order):
+        1. opencode.json provider.options.apiKey (explicit project config)
+        2. ~/.local/share/opencode/auth.json (OpenCode shared credentials)
+        3. ~/.claude/.credentials.json (Claude OAuth)
+        4. gh auth token (GitHub Copilot)
+        """
+        auth: dict[str, Any] = {}
+
+        # 1. Explicit API keys from project opencode.json
+        try:
+            config = self._read_config()
+            providers_cfg = config.get("provider", {})
+            project_auth: dict[str, Any] = {}
+            for provider_name, pcfg in providers_cfg.items():
+                api_key = pcfg.get("options", {}).get("apiKey", "")
+                # Strip {env:VAR} references — those are resolved at runtime by OpenCode
+                if api_key and not api_key.startswith("{env:"):
+                    project_auth[provider_name] = {"key": api_key}
+            if project_auth:
+                auth["opencode_auth"] = project_auth
+        except (OSError, json.JSONDecodeError, KeyError):
+            pass
+
+        # 2. OpenCode shared auth.json (fills in any gaps)
+        try:
+            oc_auth = json.loads(_OC_AUTH_PATH.read_text())
+            merged = dict(auth.get("opencode_auth", {}))
+            for key, entry in oc_auth.items():
+                if isinstance(entry, dict) and entry.get("key"):
+                    provider = _OC_KEY_TO_PROVIDER.get(key, key)
+                    if provider not in merged:
+                        merged[provider] = entry
+            if merged:
+                auth["opencode_auth"] = merged
+        except (OSError, json.JSONDecodeError):
+            pass
+
+        # 3. Claude OAuth credentials
+        try:
+            raw = json.loads(_CLAUDE_CREDS_PATH.read_text())
+            oauth = raw.get("claudeAiOauth", {})
+            if oauth.get("accessToken"):
+                auth["claude_credentials"] = {
+                    "accessToken": oauth["accessToken"],
+                    "refreshToken": oauth.get("refreshToken", ""),
+                    "expiresAt": oauth.get("expiresAt", 0),
+                }
+        except (OSError, json.JSONDecodeError, KeyError):
+            pass
+
+        # 4. GitHub token for Copilot
+        try:
+            r = subprocess.run(
+                ["gh", "auth", "token"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                auth["github_token"] = r.stdout.strip()
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+        return auth
+
     # ── Sentinel API ──────────────────────────────────────────────────
 
     def _sentinel_available(self) -> bool:
@@ -168,7 +255,7 @@ class ModelSwitcher:
                     "project_name": f"switcher:{self.opencode_json.parent.name}",
                     "framework": "opencode",
                     "poll_interval": self.poll_interval,
-                    "auth": {},
+                    "auth": self._build_auth(),
                 },
             )
             self._instance_id = resp["instance_id"]
