@@ -57,11 +57,12 @@ docker run -p 7878:7878 quota-sentinel
 
 ## CLI
 
-| Command                  | Description              |
-|--------------------------|--------------------------|
-| `quota-sentinel start`   | Launch the daemon        |
-| `quota-sentinel status`  | Global daemon status     |
-| `quota-sentinel health`  | Health check             |
+| Command                  | Description                                      |
+|--------------------------|--------------------------------------------------|
+| `quota-sentinel start`   | Launch the daemon                                |
+| `quota-sentinel status`  | Global daemon status                            |
+| `quota-sentinel health`  | Health check                                     |
+| `quota-sentinel switch`  | Proactively switch OpenCode models based on quota |
 
 ## API
 
@@ -196,7 +197,12 @@ Returns a dict of provider name → status. Empty `{}` if no instances registere
         "utilization": 45.2,
         "velocity_pct_per_hour": 5.3,
         "resets_at": "2026-04-10T00:00:00+00:00",
-        "status": "GREEN"
+        "status": "GREEN",
+        "metadata": {
+          "total_balance": 2500.50,
+          "is_available": true,
+          "currency": "USD"
+        }
       }
     }
   }
@@ -227,6 +233,77 @@ Or if no data:
   "error": "no data"
 }
 ```
+
+### Proactive Model Switching (OpenCode)
+
+The `quota-sentinel switch` command monitors Quota Sentinel and proactively updates your `opencode.json` before you hit rate limits:
+
+```bash
+quota-sentinel switch /path/to/opencode.json --recovery-hold 5
+```
+
+**How it works:**
+- Monitors providers and switches to fallback models when reaching YELLOW/RED status
+- Uses hysteresis to prevent flapping (only restores after GREEN consecutive polls)
+- Remembers original models across restarts via `.opencode-switcher.json`
+- Works with any `opencode.json` file and supports multiple instances
+
+### Agent Caddy Fallback Format
+
+The model switcher expects `fallback_models` to be defined in your `opencode.json` using the Agent Caddy format:
+
+**Basic Structure:**
+```json
+{
+  "agent": {
+    "YOUR_AGENT_NAME": {
+      "model": "original-provider/original-model",
+      "fallback_models": [
+        "fallback-provider/fallback-model",
+        "backup-provider/backup-model"
+      ]
+    }
+  }
+}
+```
+
+**Key Requirements:**
+
+1. **Model Identifier Format**: Must be `provider/model-name` (e.g., `deepseek/deepseek-chat`)
+
+2. **Provider Matching**: The switcher uses the prefix before `/` to match against Quota Sentinel provider names
+
+3. **Selection Priority**: Fallback models are tried in order - first one with GREEN status is selected
+
+**Complete Example:**
+```json
+{
+  "agent": {
+    "build": {
+      "model": "github-copilot/claude-3-5-sonnet",
+      "fallback_models": [
+        "deepseek/deepseek-chat",
+        "minimax/MiniMax-M2.5",
+        "zai/zai-code-chat-v1"
+      ]
+    },
+    "production": {
+      "model": "deepseek/deepseek-chat",
+      "fallback_models": [
+        "minimax/MiniMax-M2.5",
+        "zai/zai-code-chat-v1"
+      ]
+    }
+  }
+}
+```
+
+**Selection Logic:**
+1. When original provider reaches YELLOW/RED status
+2. Iterates through `fallback_models` in order
+3. Selects first model whose provider is currently GREEN
+4. If all fallbacks are unhealthy, stays on current model
+5. Recovery occurs only after original provider has been GREEN for `--recovery-hold` consecutive polls
 
 ## Authentication
 
