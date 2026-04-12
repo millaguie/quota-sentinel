@@ -36,7 +36,7 @@ OpenCode to fallback models before credits run out**.
 ### Install
 
 ```bash
-pip install .
+pipx install .
 ```
 
 ### Run
@@ -336,7 +336,7 @@ curl -s http://127.0.0.1:7878/v1/health
 ### Install (if not found)
 
 ```bash
-pip install git+https://github.com/millaguie/quota-sentinel.git
+pipx install git+https://github.com/millaguie/quota-sentinel.git
 ```
 
 ### Start the proactive switcher
@@ -350,7 +350,7 @@ quota-sentinel switch opencode.json --restore  # restore original models
 ### When asked to "set up quota-sentinel"
 
 1. Check if installed: `command -v quota-sentinel`
-2. If not installed: `pip install git+https://github.com/millaguie/quota-sentinel.git`
+2. If not installed: `pipx install git+https://github.com/millaguie/quota-sentinel.git`
 3. Start the switcher: `quota-sentinel switch opencode.json &`
 4. Confirm it started: `quota-sentinel health`
 ```
