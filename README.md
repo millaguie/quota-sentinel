@@ -273,7 +273,7 @@ The model switcher expects `fallback_models` to be defined in your `opencode.jso
 
 **Key Requirements:**
 
-1. **Model Identifier Format**: Must be `provider/model-name` (e.g., `deepseek/deepseek-chat`)
+1. **Model Identifier Format**: Must be `provider/model-name` (e.g., `deepseek/deepseek-v3.2`)
 
 2. **Provider Matching**: The switcher uses the prefix before `/` to match against Quota Sentinel provider names
 
@@ -284,18 +284,18 @@ The model switcher expects `fallback_models` to be defined in your `opencode.jso
 {
   "agent": {
     "build": {
-      "model": "github-copilot/claude-3-5-sonnet",
+      "model": "github-copilot/gpt-5-mini",
       "fallback_models": [
-        "deepseek/deepseek-chat",
-        "minimax/MiniMax-M2.5",
-        "zai/zai-code-chat-v1"
+        "deepseek/deepseek-v3.2",
+        "alibaba/qwen3-max",
+        "zai/glm-5.1"
       ]
     },
     "production": {
-      "model": "deepseek/deepseek-chat",
+      "model": "deepseek/deepseek-v3.2",
       "fallback_models": [
-        "minimax/MiniMax-M2.5",
-        "zai/zai-code-chat-v1"
+        "alibaba/qwen3-max",
+        "zai/glm-5.1"
       ]
     }
   }
@@ -382,18 +382,18 @@ different providers:
 {
   "agent": {
     "build": {
-      "model": "github-copilot/claude-3-5-sonnet",
+      "model": "github-copilot/gpt-5-mini",
       "fallback_models": [
-        "deepseek/deepseek-chat",
-        "minimax/MiniMax-M2.5",
-        "zai/zai-code-chat-v1"
+        "deepseek/deepseek-v3.2",
+        "alibaba/qwen3-max",
+        "zai/glm-5.1"
       ]
     },
     "test": {
-      "model": "github-copilot/claude-3-5-sonnet",
+      "model": "github-copilot/gpt-5-mini",
       "fallback_models": [
-        "deepseek/deepseek-chat",
-        "minimax/MiniMax-M2.5"
+        "deepseek/deepseek-v3.2",
+        "alibaba/qwen3-max"
       ]
     }
   }
