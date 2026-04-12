@@ -309,6 +309,101 @@ The model switcher expects `fallback_models` to be defined in your `opencode.jso
 4. If all fallbacks are unhealthy, stays on current model
 5. Recovery occurs only after original provider has been GREEN for `--recovery-hold` consecutive polls
 
+### Agent Caddy Integration
+
+If you use [Agent Caddy](https://github.com/millaguie/agentcaddy) to scaffold your projects,
+`fallback_models` are generated automatically per agent based on model scoring and provider
+diversity. No manual configuration needed — just run `agentcaddy generate` and the resulting
+`opencode.json` will include fallbacks.
+
+To integrate quota-sentinel switching into an Agent Caddy project, add a skill file
+(e.g. `.opencode/skills/quota-sentinel.md`) so your agents know how to use it:
+
+```markdown
+## Quota Sentinel Management
+
+Quota Sentinel monitors AI provider quotas and switches models proactively
+before credits run out.
+
+### Check if installed and running
+
+```bash
+command -v quota-sentinel          # check if installed
+quota-sentinel health              # check if server is running
+curl -s http://127.0.0.1:7878/v1/health
+```
+
+### Install (if not found)
+
+```bash
+pip install git+https://github.com/millaguie/quota-sentinel.git
+```
+
+### Start the proactive switcher
+
+```bash
+quota-sentinel switch opencode.json          # daemon mode
+quota-sentinel switch opencode.json --once   # single check and exit
+quota-sentinel switch opencode.json --restore  # restore original models
+```
+
+### When asked to "set up quota-sentinel"
+
+1. Check if installed: `command -v quota-sentinel`
+2. If not installed: `pip install git+https://github.com/millaguie/quota-sentinel.git`
+3. Start the switcher: `quota-sentinel switch opencode.json &`
+4. Confirm it started: `quota-sentinel health`
+```
+
+And define your agents with fallbacks in `data/catalog/agents.yaml`:
+
+```yaml
+agents:
+  build:
+    description: "Development agent - writes code, runs tests, builds the project"
+    temperature: 0.2
+    color: "#4CAF50"
+    role: implementer
+    domain: development
+
+  test:
+    description: "Test specialist - writes tests, validates coverage"
+    temperature: 0.1
+    color: "#8BC34A"
+    role: tester
+    domain: development
+```
+
+Agent Caddy's generator will automatically produce an `opencode.json` with
+`fallback_models` for each agent, selecting the best alternative model from
+different providers:
+
+```json
+{
+  "agent": {
+    "build": {
+      "model": "github-copilot/claude-3-5-sonnet",
+      "fallback_models": [
+        "deepseek/deepseek-chat",
+        "minimax/MiniMax-M2.5",
+        "zai/zai-code-chat-v1"
+      ]
+    },
+    "test": {
+      "model": "github-copilot/claude-3-5-sonnet",
+      "fallback_models": [
+        "deepseek/deepseek-chat",
+        "minimax/MiniMax-M2.5"
+      ]
+    }
+  }
+}
+```
+
+When `quota-sentinel switch` detects a provider approaching quota exhaustion,
+it rewrites the `model` field to the first healthy fallback — transparently,
+with no manual intervention.
+
 ## Authentication
 
 All endpoints except `/v1/health` and `/v1/instances` require authentication
