@@ -2,12 +2,16 @@
 
 Centralized AI provider quota monitoring daemon. Tracks usage and rate-limit
 status across multiple AI coding providers, delivers real-time velocity analysis,
-exhaustion projections, and per-instance budget allocation.
+exhaustion projections, per-instance budget allocation, and **proactively switches
+OpenCode to fallback models before credits run out**.
 
 ## Features
 
 - **Multi-provider monitoring** -- Claude, GitHub Copilot, Z.ai, MiniMax,
   DeepSeek, and Alibaba Cloud (Tongyi Lingma)
+- **Proactive model switching** -- automatically updates `opencode.json` to
+  fallback models when a provider approaches quota exhaustion, with hysteresis
+  to prevent flapping and automatic recovery when credits are replenished
 - **Velocity analysis** -- linear regression over rolling samples to compute
   consumption rate (%/hour)
 - **Exhaustion projection** -- predicts time-to-quota-exhaustion per provider
