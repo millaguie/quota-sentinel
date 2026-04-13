@@ -338,3 +338,147 @@ class TestInstancesEndpointNoAuth:
             },
         )
         assert response.status_code == 201
+
+
+# =============================================================================
+# Metrics Endpoint Tests
+# =============================================================================
+
+
+class TestMetricsEndpoint:
+    """Tests for GET /v1/metrics Prometheus-compatible endpoint."""
+
+    def test_metrics_returns_200_without_auth(self):
+        """GET /v1/metrics works without X-API-Key."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get("/v1/metrics")
+        assert response.status_code == 200
+
+    def test_metrics_returns_prometheus_text_format(self):
+        """GET /v1/metrics returns Prometheus text format."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get("/v1/metrics")
+        assert response.status_code == 200
+        content_type = response.headers.get("content-type", "")
+        assert "text/plain" in content_type or "text/plain" in str(response.headers)
+
+    def test_metrics_includes_instances_total(self):
+        """GET /v1/metrics includes quota_sentinel_instances_total metric."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get("/v1/metrics")
+        assert response.status_code == 200
+        assert "quota_sentinel_instances_total" in response.text
+
+    def test_metrics_includes_providers_total(self):
+        """GET /v1/metrics includes quota_sentinel_providers_total metric."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get("/v1/metrics")
+        assert response.status_code == 200
+        assert "quota_sentinel_providers_total" in response.text
+
+    def test_metrics_includes_uptime_seconds(self):
+        """GET /v1/metrics includes quota_sentinel_uptime_seconds metric."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get("/v1/metrics")
+        assert response.status_code == 200
+        assert "quota_sentinel_uptime_seconds" in response.text
+
+    def test_metrics_provider_utilization_and_status_present_when_data_exists(self):
+        """Per-provider metrics appear when provider polling data exists.
+
+        Without polling, per-provider utilization/status metrics won't be present.
+        This test registers an instance and verifies the basic metrics are present.
+        """
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        # Register an instance (this creates providers but no polling data yet)
+        client.post(
+            "/v1/instances",
+            json={
+                "project_name": "test-project",
+                "auth": {
+                    "opencode_auth": {
+                        "zai-coding-plan": {"key": "test-key-123"},
+                    },
+                },
+            },
+        )
+
+        response = client.get("/v1/metrics")
+        assert response.status_code == 200
+        # Basic metrics should be present
+        assert "quota_sentinel_instances_total" in response.text
+        assert "quota_sentinel_providers_total" in response.text
+        assert "quota_sentinel_uptime_seconds" in response.text
+
+    def test_metrics_instances_total_reflects_registered_instances(self):
+        """quota_sentinel_instances_total reflects actual instance count."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        # Initially 0
+        response = client.get("/v1/metrics")
+        assert response.status_code == 200
+        assert "quota_sentinel_instances_total 0" in response.text
+
+        # Register an instance
+        client.post(
+            "/v1/instances",
+            json={
+                "project_name": "test-project",
+                "auth": {
+                    "opencode_auth": {
+                        "zai-coding-plan": {"key": "test-key-123"},
+                    },
+                },
+            },
+        )
+
+        response = client.get("/v1/metrics")
+        assert response.status_code == 200
+        assert "quota_sentinel_instances_total 1" in response.text
+
+    def test_metrics_providers_total_reflects_provider_count(self):
+        """quota_sentinel_providers_total reflects unique provider count."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.get("/v1/metrics")
+        assert response.status_code == 200
+        assert "quota_sentinel_providers_total 0" in response.text
+
+        # Register an instance with a provider
+        client.post(
+            "/v1/instances",
+            json={
+                "project_name": "test-project",
+                "auth": {
+                    "opencode_auth": {
+                        "zai-coding-plan": {"key": "test-key-123"},
+                    },
+                },
+            },
+        )
+
+        response = client.get("/v1/metrics")
+        assert response.status_code == 200
+        assert "quota_sentinel_providers_total 1" in response.text

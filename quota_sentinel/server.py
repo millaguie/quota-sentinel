@@ -12,7 +12,7 @@ from typing import Any
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
 from quota_sentinel.config import ServerConfig
@@ -584,6 +584,75 @@ async def health(request: Request) -> JSONResponse:
     )
 
 
+# ── Prometheus Metrics ─────────────────────────────────────────────────
+
+
+async def metrics(request: Request) -> PlainTextResponse:
+    """
+    tags:
+      - operations
+    summary: Prometheus-compatible metrics
+    description: Returns metrics in Prometheus text format for scraping.
+    responses:
+      200:
+        description: Prometheus metrics.
+        content:
+          text/plain:
+            schema:
+              type: string
+    """
+    store = _get_store()
+    config = _get_config()
+
+    from quota_sentinel.engine import _window_status, get_hard_cap
+
+    lines: list[str] = []
+    lines.append("# HELP quota_sentinel_instances_total Number of registered instances")
+    lines.append("# TYPE quota_sentinel_instances_total gauge")
+    lines.append(f"quota_sentinel_instances_total {len(store.instances)}")
+
+    lines.append("# HELP quota_sentinel_providers_total Number of providers")
+    lines.append("# TYPE quota_sentinel_providers_total gauge")
+    lines.append(f"quota_sentinel_providers_total {len(store.providers)}")
+
+    lines.append("# HELP quota_sentinel_uptime_seconds Daemon uptime in seconds")
+    lines.append("# TYPE quota_sentinel_uptime_seconds counter")
+    lines.append(f"quota_sentinel_uptime_seconds {store.uptime():.3f}")
+
+    # Per-provider utilization and status
+    status_map = {"GREEN": 1, "YELLOW": 2, "RED": 3}
+
+    for pe in store.unique_providers():
+        pname = pe.provider_name
+        if pe.last_result and not pe.last_result.error:
+            for wn, wd in pe.last_result.windows.items():
+                tracker = store.velocities.get(pname, {}).get(wn)
+                vel = tracker.velocity_pct_per_hour() if tracker else 0.0
+                cap = get_hard_cap(pname, wn, config.hard_caps)
+                ws = _window_status(wd.utilization, vel, cap, config.safety_margin_min)
+
+                util_label = f'provider="{pname}",window="{wn}"'
+                lines.append(
+                    "# HELP quota_sentinel_provider_utilization Per-provider utilization %"
+                )
+                lines.append("# TYPE quota_sentinel_provider_utilization gauge")
+                lines.append(
+                    f"quota_sentinel_provider_utilization{{{util_label}}} {wd.utilization:.1f}"
+                )
+
+                status_label = f'provider="{pname}",window="{wn}",status="{ws}"'
+                lines.append(
+                    "# HELP quota_sentinel_provider_status Per-provider status (1=GREEN, 2=YELLOW, 3=RED)"
+                )
+                lines.append("# TYPE quota_sentinel_provider_status gauge")
+                lines.append(
+                    f"quota_sentinel_provider_status{{{status_label}}} {status_map.get(ws, 0)}"
+                )
+
+    output = "\n".join(lines) + "\n"
+    return PlainTextResponse(output)
+
+
 # ── App factory ─────────────────────────────────────────────────────
 
 
@@ -597,6 +666,7 @@ routes = [
     Route("/v1/providers/{name}", provider_detail, methods=["GET"]),
     Route("/v1/poll", trigger_poll, methods=["POST"]),
     Route("/v1/health", health, methods=["GET"]),
+    Route("/v1/metrics", metrics, methods=["GET"]),
     Route("/v1/openapi.json", openapi_schema, methods=["GET"], include_in_schema=False),
     Route("/v1/docs", redoc_ui, methods=["GET"], include_in_schema=False),
 ]
