@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import urllib.error
 from datetime import UTC, datetime
 
 from quota_sentinel.providers.base import UsageProvider, UsageResult, WindowUsage
+from quota_sentinel.providers.errors import AuthError, RateLimitError, TransientError
 from quota_sentinel.providers.http import http_get
 
 ZAI_QUOTA_URL = "https://api.z.ai/api/monitor/usage/quota/limit"
@@ -29,13 +29,14 @@ class ZaiUsageProvider(UsageProvider):
             data = http_get(
                 ZAI_QUOTA_URL, headers={"Authorization": f"Bearer {self.api_token}"}
             )
-        except urllib.error.HTTPError as e:
-            error_map = {401: "auth failed", 429: "rate limited"}
-            return UsageResult(
-                provider=self.name, error=error_map.get(e.code, f"HTTP {e.code}")
-            )
-        except Exception as e:
+        except AuthError as e:
             return UsageResult(provider=self.name, error=str(e))
+        except RateLimitError as e:
+            return UsageResult(provider=self.name, error=str(e))
+        except TransientError as e:
+            return UsageResult(provider=self.name, error=str(e))
+        except Exception as e:
+            return UsageResult(provider=self.name, error=f"unexpected error: {e}")
 
         if not data.get("success"):
             return UsageResult(provider=self.name, error="API returned success=false")

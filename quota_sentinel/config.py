@@ -16,6 +16,9 @@ DEFAULT_HARD_CAPS: dict[str, float] = {
     "minimax_default": 85.0,
     "deepseek_default": 85.0,
     "alibaba_default": 80.0,
+    "cerebras_default": 85.0,
+    "openai_default": 85.0,
+    "opencode_default": 80.0,
 }
 
 
@@ -35,6 +38,7 @@ class ServerConfig:
     opencode_db_path: Path | None = None
     opencode_poll_interval: int = 60
     opencode_db: OpenCodeDBConfig | None = field(default=None, init=False)
+    sessions_remaining_threshold: float = 1.5
 
     def __post_init__(self) -> None:
         """Build opencode_db config from enable_opencode_db and opencode_db_path."""

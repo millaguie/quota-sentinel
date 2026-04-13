@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 import time
-import urllib.error
 from datetime import datetime
 
 from quota_sentinel.providers.base import UsageProvider, UsageResult, WindowUsage
+from quota_sentinel.providers.errors import AuthError, RateLimitError, TransientError
 from quota_sentinel.providers.http import http_get, http_post_json
 
 logger = logging.getLogger(__name__)
@@ -62,12 +62,14 @@ class ClaudeUsageProvider(UsageProvider):
                     "anthropic-beta": "oauth-2025-04-20",
                 },
             )
-        except urllib.error.HTTPError as e:
-            if e.code == 429:
-                return UsageResult(provider=self.name, error="rate limited")
-            return UsageResult(provider=self.name, error=f"HTTP {e.code}")
-        except Exception as e:
+        except AuthError as e:
             return UsageResult(provider=self.name, error=str(e))
+        except RateLimitError as e:
+            return UsageResult(provider=self.name, error=str(e))
+        except TransientError as e:
+            return UsageResult(provider=self.name, error=str(e))
+        except Exception as e:
+            return UsageResult(provider=self.name, error=f"unexpected error: {e}")
 
         windows: dict[str, WindowUsage] = {}
         for key in ("five_hour", "seven_day", "seven_day_sonnet", "seven_day_opus"):

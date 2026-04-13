@@ -9,7 +9,9 @@ import secrets
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
+from quota_sentinel.calibration import TokenCalibrator
 from quota_sentinel.engine import VelocityTracker
 from quota_sentinel.opencode_db import (
     ConsumptionSnapshot,
@@ -77,6 +79,13 @@ class Store:
         self.opencode_projects: list[ProjectUsageSnapshot] = []
         self.opencode_session_stats: list[SessionStats] = []
         self.opencode_last_poll: datetime | None = None
+        # Calibration state
+        self.calibrator: TokenCalibrator = TokenCalibrator()
+        self._prev_utilization: dict[
+            str, dict[str, float]
+        ] = {}  # provider -> window -> util
+        self._prev_opencode_tokens: int = 0
+        self._last_calibration: dict[str, Any] = {}
 
     def uptime(self) -> float:
         return time.time() - self._started_at
@@ -235,6 +244,78 @@ class Store:
         self.opencode_projects = projects
         self.opencode_session_stats = session_stats
         self.opencode_last_poll = datetime.now(UTC)
+
+    # ── Calibration ──────────────────────────────────────────────────
+
+    def compute_calibration(
+        self,
+        provider_results: dict[str, UsageResult],
+        opencode_tokens: int,
+    ) -> dict[str, Any]:
+        """Compute token-per-percentage calibration from provider and OpenCode data.
+
+        Compares utilization% delta from provider API with token delta from OpenCode DB
+        to compute tokens_per_pct for each provider/window. Results are stored in
+        the calibrator and returned as a snapshot.
+
+        Args:
+            provider_results: Results from provider polling (provider_name -> UsageResult)
+            opencode_tokens: Current total tokens from OpenCode DB
+
+        Returns:
+            Calibration snapshot dict for API responses
+        """
+        tokens_delta = opencode_tokens - self._prev_opencode_tokens
+        calibration_count = 0
+
+        for pname, result in provider_results.items():
+            if result.error or pname not in self._prev_utilization:
+                continue
+
+            for wname, wdata in result.windows.items():
+                prev_util = self._prev_utilization.get(pname, {}).get(wname)
+                if prev_util is None:
+                    continue
+
+                util_delta = wdata.utilization - prev_util
+                if util_delta <= 0:
+                    # Utilization didn't increase - skip calibration
+                    # (provider may report reset or no change)
+                    continue
+
+                if tokens_delta <= 0:
+                    continue
+
+                entry = self.calibrator.record(
+                    provider=pname,
+                    window=wname,
+                    tokens_delta=tokens_delta,
+                    utilization_delta_pct=util_delta,
+                )
+                if entry:
+                    calibration_count += 1
+
+        # Update previous values
+        self._prev_opencode_tokens = opencode_tokens
+        self._prev_utilization.clear()
+        for pname, result in provider_results.items():
+            if result.error:
+                continue
+            if pname not in self._prev_utilization:
+                self._prev_utilization[pname] = {}
+            for wname, wdata in result.windows.items():
+                self._prev_utilization[pname][wname] = wdata.utilization
+
+        if calibration_count > 0:
+            logger.info(
+                "Calibration computed: %d entries recorded (tokens_delta=%d, opencode_tokens=%d)",
+                calibration_count,
+                tokens_delta,
+                opencode_tokens,
+            )
+
+        self._last_calibration = self.calibrator.calibration_snapshot()
+        return self._last_calibration
 
     # ── Snapshot for API ────────────────────────────────────────────
 

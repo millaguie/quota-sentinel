@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import time
-import urllib.error
 from datetime import UTC, datetime
 
 from quota_sentinel.providers.base import UsageProvider, UsageResult, WindowUsage
+from quota_sentinel.providers.errors import AuthError, RateLimitError, TransientError
 from quota_sentinel.providers.http import http_get
 
 MINIMAX_REMAINS_URL = (
@@ -39,13 +39,14 @@ class MiniMaxUsageProvider(UsageProvider):
                     "referer": "https://platform.minimax.io/user-center/payment/coding-plan",
                 },
             )
-        except urllib.error.HTTPError as e:
-            error_map = {401: "auth failed", 429: "rate limited"}
-            return UsageResult(
-                provider=self.name, error=error_map.get(e.code, f"HTTP {e.code}")
-            )
-        except Exception as e:
+        except AuthError as e:
             return UsageResult(provider=self.name, error=str(e))
+        except RateLimitError as e:
+            return UsageResult(provider=self.name, error=str(e))
+        except TransientError as e:
+            return UsageResult(provider=self.name, error=str(e))
+        except Exception as e:
+            return UsageResult(provider=self.name, error=f"unexpected error: {e}")
 
         status_code = data.get("base_resp", {}).get("status_code", -1)
         if status_code != 0:

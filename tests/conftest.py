@@ -47,4 +47,7 @@ def mock_store():
         store.providers = {}
         store.velocities = {}
         store.effective_poll_interval.return_value = 300
+        # Required for sessions_remaining feature
+        store.calibrator = MagicMock()
+        store.opencode_session_stats = []
         yield store

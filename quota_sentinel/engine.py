@@ -5,9 +5,13 @@ from __future__ import annotations
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from quota_sentinel.providers.base import UsageResult
+
+if TYPE_CHECKING:
+    from quota_sentinel.calibration import TokenCalibrator
+    from quota_sentinel.opencode_db import SessionStats
 
 
 @dataclass
@@ -69,6 +73,53 @@ def get_hard_cap(provider: str, window: str, caps: dict[str, float]) -> float:
     return caps.get(specific, caps.get(provider_default, 85.0))
 
 
+def compute_avg_tokens_per_session(session_stats: list[SessionStats]) -> float | None:
+    """Compute average tokens per session from session statistics.
+
+    Returns None if no sessions available.
+    """
+    if not session_stats:
+        return None
+    total_tokens = sum(s.total_tokens for s in session_stats)
+    count = len(session_stats)
+    if count == 0:
+        return None
+    return total_tokens / count
+
+
+def estimated_sessions_remaining(
+    calibrator: TokenCalibrator,
+    session_stats: list[SessionStats],
+    provider: str,
+    window: str,
+    utilization: float,
+    hard_cap: float,
+) -> float | None:
+    """Estimate remaining sessions based on calibrated tokens and average session size.
+
+    Returns None if calibration or session stats are unavailable.
+    """
+    # Get calibrated tokens for current utilization
+    current_tokens = calibrator.utilization_to_tokens(provider, window, utilization)
+    if current_tokens is None:
+        return None
+
+    # Get calibrated tokens at hard cap (total capacity)
+    cap_tokens = calibrator.utilization_to_tokens(provider, window, hard_cap)
+    if cap_tokens is None:
+        return None
+
+    # Remaining tokens
+    remaining_tokens = max(0, cap_tokens - current_tokens)
+
+    # Average tokens per session
+    avg_tokens = compute_avg_tokens_per_session(session_stats)
+    if avg_tokens is None or avg_tokens <= 0:
+        return None
+
+    return remaining_tokens / avg_tokens
+
+
 def _window_status(
     utilization: float,
     velocity: float,
@@ -99,10 +150,17 @@ def evaluate(
     hard_caps: dict[str, float],
     safety_margin_min: int = 30,
     framework: str = "opencode",
+    calibrator: TokenCalibrator | None = None,
+    session_stats: list[SessionStats] | None = None,
+    sessions_remaining_threshold: float = 1.5,
 ) -> dict[str, Any]:
     """Evaluate all provider results and produce a TOKEN_STATUS dict."""
 
     from datetime import UTC, datetime
+
+    # Import SessionStats type for type checking
+    if session_stats is None:
+        session_stats = []
 
     provider_statuses: dict[str, Any] = {}
     worst_status = "GREEN"
@@ -131,6 +189,32 @@ def evaluate(
             if tracker:
                 exhaust_min = tracker.projected_exhaustion_min(wdata.utilization, cap)
 
+            # Compute sessions remaining if calibration data is available
+            sessions_remaining: float | None = None
+            if calibrator is not None:
+                sessions_remaining = estimated_sessions_remaining(
+                    calibrator,
+                    session_stats,
+                    prov_name,
+                    wname,
+                    wdata.utilization,
+                    cap,
+                )
+                # Factor low sessions_remaining into status
+                if (
+                    sessions_remaining is not None
+                    and sessions_remaining < sessions_remaining_threshold
+                ):
+                    # If sessions remaining is critically low, escalate status
+                    if sessions_remaining < sessions_remaining_threshold / 2:
+                        w_status = "RED"
+                    else:
+                        # Use worse of current status or YELLOW
+                        if status_order.get(w_status, 0) < status_order.get(
+                            "YELLOW", 0
+                        ):
+                            w_status = "YELLOW"
+
             windows_out[wname] = {
                 "utilization": round(wdata.utilization, 1),
                 "velocity_pct_per_hour": round(vel, 1),
@@ -139,6 +223,9 @@ def evaluate(
                 else None,
                 "resets_at": wdata.resets_at.isoformat() if wdata.resets_at else None,
                 "status": w_status,
+                "sessions_remaining": round(sessions_remaining, 1)
+                if sessions_remaining is not None
+                else None,
             }
 
             if status_order.get(w_status, 0) > status_order.get(prov_worst, 0):
@@ -150,8 +237,13 @@ def evaluate(
                     if exhaust_min is not None
                     else "growing"
                 )
+                sessions_str = (
+                    f", {sessions_remaining:.1f} sessions left"
+                    if sessions_remaining is not None
+                    else ""
+                )
                 messages.append(
-                    f"{prov_name} {wname} at {wdata.utilization:.0f}% ({time_str})"
+                    f"{prov_name} {wname} at {wdata.utilization:.0f}% ({time_str}{sessions_str})"
                 )
 
         provider_statuses[prov_name] = {"status": prov_worst, "windows": windows_out}

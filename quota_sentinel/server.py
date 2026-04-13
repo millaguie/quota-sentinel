@@ -377,6 +377,19 @@ async def global_status(request: Request) -> JSONResponse:
                 k: {ck: round(cv, 1) for ck, cv in v.items()}
                 for k, v in allocations.items()
             },
+            "opencode_source": (
+                {
+                    "total_tokens": store.opencode_consumption.total_tokens,
+                    "by_provider": store.opencode_consumption.by_provider,
+                    "last_poll": (
+                        store.opencode_last_poll.isoformat()
+                        if store.opencode_last_poll
+                        else None
+                    ),
+                }
+                if store.opencode_consumption
+                else None
+            ),
         }
     )
 
@@ -411,6 +424,68 @@ async def instance_status(request: Request) -> JSONResponse:
 
     allocations = getattr(store, "_last_allocations", {})
     status = build_instance_status(instance_id, store, config, allocations)
+
+    # Add project token usage from OpenCode data
+    inst = store.instances[instance_id]
+    project_token_usage: dict[str, Any] | None = None
+
+    if store.opencode_projects:
+        # Find projects that match this instance's project_name
+        inst_name = inst.project_name.lower()
+        matched_projects = [
+            p
+            for p in store.opencode_projects
+            if inst_name in p.project_path.lower()
+            or inst_name == p.project_name.lower()
+        ]
+        if matched_projects:
+            total_tokens = sum(p.total_tokens for p in matched_projects)
+            project_token_usage = {
+                "total_tokens": total_tokens,
+                "project_count": len(matched_projects),
+                "projects": [
+                    {
+                        "name": p.project_name,
+                        "path": p.project_path,
+                        "tokens": p.total_tokens,
+                        "sessions": p.session_count,
+                    }
+                    for p in matched_projects
+                ],
+            }
+
+    # Add sessions_remaining from session stats if available
+    sessions_remaining: float | None = None
+    if store.opencode_session_stats and store.calibrator:
+        # Use the engine's estimated_sessions_remaining function
+        from quota_sentinel.engine import compute_avg_tokens_per_session
+
+        avg_tokens = compute_avg_tokens_per_session(store.opencode_session_stats)
+        if avg_tokens and avg_tokens > 0:
+            # Estimate total tokens from session stats
+            total_session_tokens = sum(
+                s.total_tokens for s in store.opencode_session_stats
+            )
+            # Get first provider with calibration data
+            for prov_name in (
+                store.opencode_consumption.by_provider.keys()
+                if store.opencode_consumption
+                else []
+            ):
+                cap_tokens = store.calibrator.utilization_to_tokens(
+                    prov_name, "default", 85.0
+                )
+                if cap_tokens:
+                    remaining = cap_tokens - total_session_tokens
+                    if remaining > 0:
+                        sessions_remaining = remaining / avg_tokens
+                    break
+
+    if project_token_usage is not None:
+        status["project_token_usage"] = project_token_usage
+    if sessions_remaining is not None:
+        status["sessions_remaining"] = round(sessions_remaining, 1)
+
     return JSONResponse(status)
 
 
@@ -584,6 +659,259 @@ async def health(request: Request) -> JSONResponse:
     )
 
 
+# ── Projects endpoint ──────────────────────────────────────────────────
+
+
+async def projects_list(request: Request) -> JSONResponse:
+    """
+    tags:
+      - projects
+    summary: List all projects with usage stats
+    description: Returns all OpenCode projects with total_tokens, requests, providers, avg_tokens_per_session, and sessions_remaining.
+    responses:
+      200:
+        description: List of projects with computed stats.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                projects:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      project_name:
+                        type: string
+                      project_path:
+                        type: string
+                      total_tokens:
+                        type: integer
+                      requests:
+                        type: integer
+                      providers:
+                        type: object
+                      avg_tokens_per_session:
+                        type: number
+                      sessions_remaining:
+                        type: number
+      401:
+        description: Unauthorized.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
+    """
+    auth_error = _require_auth(request)
+    if auth_error:
+        return auth_error
+
+    store = _get_store()
+
+    projects_out = []
+    for proj in store.opencode_projects:
+        # Calculate avg_tokens_per_session
+        avg_tokens: float | None = None
+        if proj.session_count > 0:
+            avg_tokens = proj.total_tokens / proj.session_count
+
+        # sessions_remaining requires calibration data and utilization info
+        # which we don't have at project level, so we return None for now
+        sessions_remaining: float | None = None
+
+        projects_out.append(
+            {
+                "project_name": proj.project_name,
+                "project_path": proj.project_path,
+                "total_tokens": proj.total_tokens,
+                "requests": proj.session_count,
+                "providers": proj.providers,
+                "avg_tokens_per_session": round(avg_tokens, 1) if avg_tokens else None,
+                "sessions_remaining": (
+                    round(sessions_remaining, 1) if sessions_remaining else None
+                ),
+            }
+        )
+
+    return JSONResponse({"projects": projects_out})
+
+
+async def project_detail(request: Request) -> JSONResponse:
+    """
+    tags:
+      - projects
+    summary: Get project detail by name
+    description: Returns detailed usage for a specific project broken down by provider/model.
+    responses:
+      200:
+        description: Project detail with provider breakdown.
+        content:
+          application/json:
+            schema:
+              type: object
+      401:
+        description: Unauthorized.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
+      404:
+        description: Project not found.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
+    """
+    auth_error = _require_auth(request)
+    if auth_error:
+        return auth_error
+
+    store = _get_store()
+    name = request.path_params["name"]
+
+    # Find project by name
+    proj = None
+    for p in store.opencode_projects:
+        if p.project_name == name:
+            proj = p
+            break
+
+    if not proj:
+        return JSONResponse({"error": "project not found"}, status_code=404)
+
+    # Calculate avg_tokens_per_session
+    avg_tokens: float | None = None
+    if proj.session_count > 0:
+        avg_tokens = proj.total_tokens / proj.session_count
+
+    # Get related session stats for this project
+    sessions_for_project = [
+        s for s in store.opencode_session_stats if s.provider in proj.providers
+    ]
+
+    return JSONResponse(
+        {
+            "project_name": proj.project_name,
+            "project_path": proj.project_path,
+            "total_tokens": proj.total_tokens,
+            "session_count": proj.session_count,
+            "providers": proj.providers,
+            "avg_tokens_per_session": round(avg_tokens, 1) if avg_tokens else None,
+            "sessions": [
+                {
+                    "session_id": s.session_id,
+                    "provider": s.provider,
+                    "started_at": s.started_at.isoformat(),
+                    "total_tokens": s.total_tokens,
+                    "message_count": s.message_count,
+                    "assistant_tokens": s.assistant_tokens,
+                    "user_tokens": s.user_tokens,
+                }
+                for s in sessions_for_project
+            ],
+        }
+    )
+
+
+# ── Consumption endpoint ────────────────────────────────────────────────
+
+
+async def consumption(request: Request) -> JSONResponse:
+    """
+    tags:
+      - consumption
+    summary: Global consumption by provider
+    description: Returns token consumption broken down by provider with error_rate and latency metrics derived from session stats.
+    responses:
+      200:
+        description: Consumption data by provider.
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                total_tokens:
+                  type: integer
+                providers:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      provider:
+                        type: string
+                      tokens:
+                        type: integer
+                      error_rate:
+                        type: number
+                      latency:
+                        type: number
+      401:
+        description: Unauthorized.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
+    """
+    auth_error = _require_auth(request)
+    if auth_error:
+        return auth_error
+
+    store = _get_store()
+
+    if not store.opencode_consumption:
+        return JSONResponse({"total_tokens": 0, "providers": []})
+
+    consumption = store.opencode_consumption
+
+    # Compute per-provider stats from session stats
+    provider_stats: dict[str, dict[str, Any]] = {}
+    for sess in store.opencode_session_stats:
+        if sess.provider not in provider_stats:
+            provider_stats[sess.provider] = {
+                "total_tokens": 0,
+                "error_count": 0,
+                "session_count": 0,
+                "total_latency_ms": 0,
+            }
+        provider_stats[sess.provider]["total_tokens"] += sess.total_tokens
+        provider_stats[sess.provider]["session_count"] += 1
+        # Error rate: mock for now based on provider last_result
+        # Latency: could be derived from metadata if available
+
+    # Merge by_provider tokens with session stats
+    providers_out = []
+    for prov_name, tokens in consumption.by_provider.items():
+        stats = provider_stats.get(prov_name, {})
+        session_count = stats.get("session_count", 0)
+
+        # Compute error_rate based on provider's last result if available
+        error_rate: float | None = None
+        for pe in store.unique_providers():
+            if pe.provider_name == prov_name and pe.last_result:
+                if pe.last_result.error:
+                    error_rate = 1.0
+                else:
+                    error_rate = 0.0
+                break
+
+        providers_out.append(
+            {
+                "provider": prov_name,
+                "tokens": tokens,
+                "requests": session_count,
+                "error_rate": error_rate,
+                "latency": None,  # Latency would require instrumentation in providers
+            }
+        )
+
+    return JSONResponse(
+        {
+            "total_tokens": consumption.total_tokens,
+            "providers": providers_out,
+        }
+    )
+
+
 # ── Prometheus Metrics ─────────────────────────────────────────────────
 
 
@@ -664,6 +992,9 @@ routes = [
     Route("/v1/status/{id}", instance_status, methods=["GET"]),
     Route("/v1/providers", providers_summary, methods=["GET"]),
     Route("/v1/providers/{name}", provider_detail, methods=["GET"]),
+    Route("/v1/projects", projects_list, methods=["GET"]),
+    Route("/v1/projects/{name}", project_detail, methods=["GET"]),
+    Route("/v1/consumption", consumption, methods=["GET"]),
     Route("/v1/poll", trigger_poll, methods=["POST"]),
     Route("/v1/health", health, methods=["GET"]),
     Route("/v1/metrics", metrics, methods=["GET"]),

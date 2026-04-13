@@ -9,6 +9,7 @@ from typing import Any
 from quota_sentinel.allocator import BudgetAllocator
 from quota_sentinel.config import ServerConfig
 from quota_sentinel.engine import VelocityTracker, evaluate
+from quota_sentinel.opencode_db import OpenCodeDBSource
 from quota_sentinel.providers.base import UsageResult
 from quota_sentinel.store import Store
 
@@ -85,6 +86,9 @@ def build_instance_status(
         hard_caps=effective_caps,
         safety_margin_min=config.safety_margin_min,
         framework=inst.framework,
+        calibrator=store.calibrator,
+        session_stats=store.opencode_session_stats,
+        sessions_remaining_threshold=config.sessions_remaining_threshold,
     )
 
     # Add central metadata
@@ -115,6 +119,87 @@ def build_instance_status(
     return status
 
 
+def _poll_opencode_db(source: OpenCodeDBSource) -> tuple:
+    """Fetch OpenCode DB data synchronously (runs in executor thread).
+
+    Returns (consumption, projects, session_stats) or (None, [], []) on error.
+    """
+    consumption = source.get_consumption_snapshot()
+    projects = source.get_project_usage()
+    session_stats = source.get_session_stats()
+    return consumption, projects, session_stats
+
+
+def _correlate_projects_with_instances(
+    projects: list, instances: list
+) -> dict[str, list]:
+    """Correlate OpenCode projects (worktree) with registered instances (project_name).
+
+    Returns a mapping of instance_id -> matched project paths.
+    """
+    correlation: dict[str, list] = {}
+    for inst in instances:
+        matched = []
+        inst_name = inst.project_name.lower()
+        for proj in projects:
+            proj_path_lower = proj.project_path.lower()
+            # Match by project_name in worktree path or exact name match
+            if inst_name and (
+                inst_name in proj_path_lower or inst_name == proj.project_name.lower()
+            ):
+                matched.append(proj.project_path)
+        if matched:
+            correlation[inst.instance_id] = matched
+    return correlation
+
+
+async def _poll_opencode_loop(
+    store: Store,
+    config: ServerConfig,
+) -> None:
+    """Independent OpenCode DB polling loop with its own interval."""
+    if not config.opencode_db:
+        return
+
+    source = OpenCodeDBSource(config.opencode_db)
+    interval = config.opencode_poll_interval or 120
+
+    logger.info("OpenCode DB polling loop started (interval %ds)", interval)
+
+    while True:
+        try:
+            loop = asyncio.get_event_loop()
+            consumption, projects, session_stats = await loop.run_in_executor(
+                None, _poll_opencode_db, source
+            )
+
+            store.update_opencode_data(consumption, projects, session_stats)
+
+            # Correlate instances with projects for logging
+            instances = list(store.instances.values())
+            correlation = _correlate_projects_with_instances(projects, instances)
+            for iid, paths in correlation.items():
+                inst = store.instances.get(iid)
+                if inst:
+                    logger.info(
+                        "  OpenCode: instance %s (%s) matched worktrees: %s",
+                        iid,
+                        inst.project_name,
+                        paths,
+                    )
+
+            logger.info(
+                "OpenCode DB poll done: consumption=%s, projects=%d, sessions=%d",
+                consumption.total_tokens if consumption else 0,
+                len(projects),
+                len(session_stats),
+            )
+        except Exception as e:
+            logger.warning("OpenCode DB polling error: %s — continuing", e)
+
+        await asyncio.sleep(interval)
+
+
 async def run_loop(store: Store, config: ServerConfig) -> None:
     """Main polling loop — runs as asyncio task alongside the HTTP server."""
     allocator = BudgetAllocator(overcommit_factor=config.overcommit_factor)
@@ -124,6 +209,11 @@ async def run_loop(store: Store, config: ServerConfig) -> None:
         "Daemon loop started (default poll %ds)",
         config.default_poll_interval,
     )
+
+    # Start OpenCode DB polling as independent task if enabled
+    opencode_task: asyncio.Task[None] | None = None
+    if config.opencode_db:
+        opencode_task = asyncio.create_task(_poll_opencode_loop(store, config))
 
     while True:
         # GC dead instances
@@ -141,8 +231,22 @@ async def run_loop(store: Store, config: ServerConfig) -> None:
             allocations = allocator.allocate(instances, config.hard_caps)
 
             # Store allocations for API access
-            store._last_allocations = allocations  # noqa: SLF001
-            store._last_results = results  # noqa: SLF001
+            store._last_allocations = allocations
+            store._last_results = results
+
+            # Compute calibration if OpenCode DB data is available
+            opencode_tokens = (
+                store.opencode_consumption.total_tokens
+                if store.opencode_consumption
+                else 0
+            )
+            if opencode_tokens > 0:
+                calibration = store.compute_calibration(results, opencode_tokens)
+                if calibration:
+                    logger.info(
+                        "Calibration snapshot: %s",
+                        calibration,
+                    )
 
             logger.info(
                 "Poll done: %d providers, %d instances",
