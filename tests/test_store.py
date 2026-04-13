@@ -14,6 +14,11 @@ from quota_sentinel.store import (
     _fingerprint,
 )
 from quota_sentinel.providers.base import UsageProvider, UsageResult
+from quota_sentinel.opencode_db import (
+    ConsumptionSnapshot,
+    ProjectUsageSnapshot,
+    SessionStats,
+)
 
 
 # =============================================================================
@@ -1089,3 +1094,102 @@ class TestStoreSummary:
         assert summary["providers"] == 0
         assert summary["unique_provider_names"] == []
         assert summary["effective_poll_interval"] == 300
+
+
+# =============================================================================
+# Store OpenCode Fields Tests
+# =============================================================================
+
+
+class TestStoreOpenCodeFieldsInit:
+    """Tests for Store opencode storage fields initialization."""
+
+    def test_opencode_consumption_defaults_to_none(self):
+        """opencode_consumption defaults to None."""
+        store = Store()
+        assert store.opencode_consumption is None
+
+    def test_opencode_projects_defaults_to_empty_list(self):
+        """opencode_projects defaults to empty list."""
+        store = Store()
+        assert store.opencode_projects == []
+
+    def test_opencode_session_stats_defaults_to_empty_list(self):
+        """opencode_session_stats defaults to empty list."""
+        store = Store()
+        assert store.opencode_session_stats == []
+
+    def test_opencode_last_poll_defaults_to_none(self):
+        """opencode_last_poll defaults to None."""
+        store = Store()
+        assert store.opencode_last_poll is None
+
+
+class TestStoreUpdateOpenCodeData:
+    """Tests for Store.update_opencode_data() method."""
+
+    def test_update_opencode_data_sets_consumption(self):
+        """update_opencode_data sets opencode_consumption."""
+        store = Store()
+        snapshot = ConsumptionSnapshot(total_tokens=1000)
+        store.update_opencode_data(consumption=snapshot, projects=[], session_stats=[])
+        assert store.opencode_consumption is snapshot
+        assert store.opencode_consumption.total_tokens == 1000
+
+    def test_update_opencode_data_sets_projects(self):
+        """update_opencode_data sets opencode_projects."""
+        store = Store()
+        projects = [
+            ProjectUsageSnapshot(
+                project_path="/test",
+                project_name="test",
+                providers={"claude": 500},
+                total_tokens=500,
+                session_count=1,
+            )
+        ]
+        store.update_opencode_data(
+            consumption=None, projects=projects, session_stats=[]
+        )
+        assert store.opencode_projects == projects
+        assert len(store.opencode_projects) == 1
+        assert store.opencode_projects[0].total_tokens == 500
+
+    def test_update_opencode_data_sets_session_stats(self):
+        """update_opencode_data sets opencode_session_stats."""
+        store = Store()
+        from datetime import UTC, datetime
+
+        stats = [
+            SessionStats(
+                session_id=1,
+                provider="claude",
+                started_at=datetime.now(UTC),
+                total_tokens=200,
+                message_count=5,
+            )
+        ]
+        store.update_opencode_data(consumption=None, projects=[], session_stats=stats)
+        assert store.opencode_session_stats == stats
+        assert len(store.opencode_session_stats) == 1
+        assert store.opencode_session_stats[0].provider == "claude"
+
+    def test_update_opencode_data_sets_last_poll(self):
+        """update_opencode_data sets opencode_last_poll to current time."""
+        store = Store()
+        from datetime import UTC, datetime
+
+        before = datetime.now(UTC)
+        store.update_opencode_data(consumption=None, projects=[], session_stats=[])
+        after = datetime.now(UTC)
+        assert store.opencode_last_poll is not None
+        assert before <= store.opencode_last_poll <= after
+
+    def test_update_opencode_data_overwrites_previous_values(self):
+        """update_opencode_data overwrites previous opencode data."""
+        store = Store()
+        snapshot1 = ConsumptionSnapshot(total_tokens=100)
+        snapshot2 = ConsumptionSnapshot(total_tokens=200)
+        store.update_opencode_data(consumption=snapshot1, projects=[], session_stats=[])
+        store.update_opencode_data(consumption=snapshot2, projects=[], session_stats=[])
+        assert store.opencode_consumption.total_tokens == 200

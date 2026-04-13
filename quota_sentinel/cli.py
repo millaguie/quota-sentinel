@@ -6,6 +6,7 @@ import json
 import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import click
 
@@ -18,14 +19,45 @@ def cli() -> None:
 
 
 @cli.command()
-@click.option("--host", default="127.0.0.1", help="Bind address")
-@click.option("--port", default=7878, type=int, help="Bind port")
+@click.option("--host", default=None, help="Bind address")
+@click.option("--port", default=None, type=int, help="Bind port")
 @click.option(
-    "--poll-interval", default=300, type=int, help="Default poll interval (seconds)"
+    "--poll-interval", default=None, type=int, help="Default poll interval (seconds)"
 )
-def start(host: str, port: int, poll_interval: int) -> None:
-    """Start the quota-sentinel daemon."""
+@click.option(
+    "--enable-opencode-db",
+    is_flag=True,
+    default=False,
+    help="Enable OpenCode DB polling for consumption tracking.",
+)
+@click.option(
+    "--opencode-db",
+    "opencode_db_path",
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Path to OpenCode SQLite database.",
+)
+@click.option(
+    "--opencode-poll-interval",
+    default=None,
+    type=int,
+    help="Poll interval for OpenCode DB in seconds (default: 60).",
+)
+def start(
+    host: str | None,
+    port: int | None,
+    poll_interval: int | None,
+    enable_opencode_db: bool,
+    opencode_db_path: Path | None,
+    opencode_poll_interval: int | None,
+) -> None:
+    """Start the quota-sentinel daemon.
+
+    Environment variables (HOST, PORT, POLL_INTERVAL) can be used to configure
+    the server. CLI arguments take precedence over environment variables.
+    """
     import logging
+    import os
     import uvicorn
 
     from quota_sentinel.server import create_app
@@ -36,13 +68,28 @@ def start(host: str, port: int, poll_interval: int) -> None:
         datefmt="%H:%M:%S",
     )
 
+    # Use CLI args if provided, otherwise fall back to environment variables
+    resolved_host = host if host is not None else os.environ.get("HOST", "127.0.0.1")
+    resolved_port = port if port is not None else int(os.environ.get("PORT", "7878"))
+    resolved_poll_interval = (
+        poll_interval
+        if poll_interval is not None
+        else int(os.environ.get("POLL_INTERVAL", "300"))
+    )
+    resolved_opencode_poll_interval = (
+        opencode_poll_interval if opencode_poll_interval is not None else 60
+    )
+
     config = ServerConfig(
-        host=host,
-        port=port,
-        default_poll_interval=poll_interval,
+        host=resolved_host,
+        port=resolved_port,
+        default_poll_interval=resolved_poll_interval,
+        enable_opencode_db=enable_opencode_db,
+        opencode_db_path=opencode_db_path,
+        opencode_poll_interval=resolved_opencode_poll_interval,
     )
     app = create_app(config)
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run(app, host=resolved_host, port=resolved_port, log_level="info")
 
 
 @cli.command()
@@ -80,10 +127,24 @@ def health(host: str, port: int) -> None:
 @cli.command()
 @click.argument("opencode_json", default="opencode.json", type=click.Path(exists=True))
 @click.option("--sentinel-url", default="http://127.0.0.1:7878", show_default=True)
-@click.option("--poll-interval", default=60, type=int, show_default=True, help="Seconds between quota checks.")
-@click.option("--recovery-hold", default=3, type=int, show_default=True, help="Consecutive GREEN polls before restoring original model.")
+@click.option(
+    "--poll-interval",
+    default=60,
+    type=int,
+    show_default=True,
+    help="Seconds between quota checks.",
+)
+@click.option(
+    "--recovery-hold",
+    default=3,
+    type=int,
+    show_default=True,
+    help="Consecutive GREEN polls before restoring original model.",
+)
 @click.option("--once", is_flag=True, help="Run one check cycle and exit.")
-@click.option("--restore", is_flag=True, help="Restore all agents to original models and exit.")
+@click.option(
+    "--restore", is_flag=True, help="Restore all agents to original models and exit."
+)
 def switch(
     opencode_json: str,
     sentinel_url: str,

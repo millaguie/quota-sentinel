@@ -11,6 +11,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from quota_sentinel.engine import VelocityTracker
+from quota_sentinel.opencode_db import (
+    ConsumptionSnapshot,
+    ProjectUsageSnapshot,
+    SessionStats,
+)
 from quota_sentinel.providers.base import UsageProvider, UsageResult
 
 logger = logging.getLogger(__name__)
@@ -64,6 +69,14 @@ class Store:
         self.velocity_window = velocity_window
         self.poll_event = asyncio.Event()
         self._started_at = time.time()
+        # Last poll results for API access
+        self._last_allocations: dict = {}
+        self._last_results: dict[str, UsageResult] = {}
+        # OpenCode DB storage fields
+        self.opencode_consumption: ConsumptionSnapshot | None = None
+        self.opencode_projects: list[ProjectUsageSnapshot] = []
+        self.opencode_session_stats: list[SessionStats] = []
+        self.opencode_last_poll: datetime | None = None
 
     def uptime(self) -> float:
         return time.time() - self._started_at
@@ -208,6 +221,20 @@ class Store:
             self.deregister_instance(iid)
 
         return dead
+
+    # ── OpenCode DB data ────────────────────────────────────────────
+
+    def update_opencode_data(
+        self,
+        consumption: ConsumptionSnapshot | None,
+        projects: list[ProjectUsageSnapshot],
+        session_stats: list[SessionStats],
+    ) -> None:
+        """Update OpenCode DB polling data."""
+        self.opencode_consumption = consumption
+        self.opencode_projects = projects
+        self.opencode_session_stats = session_stats
+        self.opencode_last_poll = datetime.now(UTC)
 
     # ── Snapshot for API ────────────────────────────────────────────
 
