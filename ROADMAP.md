@@ -58,7 +58,7 @@
 
 ### P2-T03: Add provider tests (mocked HTTP)
 - **Description**: Test provider fetch methods with mocked HTTP responses
-- **Status**: TODO
+- **Status**: DONE
 - **Size**: L
 
 ---
