@@ -16,17 +16,30 @@ logger = logging.getLogger(__name__)
 
 
 def _poll_all_providers(store: Store) -> dict[str, UsageResult]:
-    """Fetch all providers synchronously (runs in executor thread)."""
+    """Fetch all providers synchronously (runs in executor thread).
+
+    Iterates over snapshots of ``store.providers`` because the main asyncio
+    thread may mutate the dict (new registrations, deregistrations) while
+    this runs in the thread pool. Each provider fetch is wrapped in a
+    try/except so one broken provider can't terminate the polling loop.
+    """
     results: dict[str, UsageResult] = {}
 
-    for _pool_key, pentry in store.providers.items():
+    # Snapshot to avoid "dictionary changed size during iteration" when
+    # registrations happen concurrently on the main thread.
+    for _pool_key, pentry in list(store.providers.items()):
         pname = pentry.provider_name
         # Only poll once per provider name (dedup across fingerprints)
         if pname in results:
             pentry.last_result = results[pname]
             continue
 
-        result = pentry.provider.fetch()
+        try:
+            result = pentry.provider.fetch()
+        except Exception as exc:
+            logger.exception("  %s: fetch raised unexpectedly", pname)
+            result = UsageResult(provider=pname, error=f"fetch crashed: {exc}")
+
         results[pname] = result
         pentry.last_result = result
 
@@ -53,7 +66,7 @@ def _poll_all_providers(store: Store) -> dict[str, UsageResult]:
             logger.info("  %s: %s", pname, ", ".join(parts))
 
     # Propagate results to all entries with same provider name
-    for pentry in store.providers.values():
+    for pentry in list(store.providers.values()):
         if pentry.provider_name in results:
             pentry.last_result = results[pentry.provider_name]
 
@@ -126,31 +139,37 @@ async def run_loop(store: Store, config: ServerConfig) -> None:
     )
 
     while True:
-        # GC dead instances
-        timeout_s = store.effective_poll_interval() * config.heartbeat_timeout_factor
-        dead = store.gc_dead_instances(timeout_s)
-        if dead:
-            logger.info("GC pruned: %s", dead)
-
-        if store.providers:
-            # Poll in thread pool (providers use sync urllib)
-            results = await loop.run_in_executor(None, _poll_all_providers, store)
-
-            # Compute allocations
-            instances = list(store.instances.values())
-            allocations = allocator.allocate(instances, config.hard_caps)
-
-            # Store allocations for API access
-            store._last_allocations = allocations  # noqa: SLF001
-            store._last_results = results  # noqa: SLF001
-
-            logger.info(
-                "Poll done: %d providers, %d instances",
-                len(results),
-                len(instances),
+        try:
+            # GC dead instances
+            timeout_s = (
+                store.effective_poll_interval() * config.heartbeat_timeout_factor
             )
-        else:
-            logger.debug("No providers registered, skipping poll")
+            dead = store.gc_dead_instances(timeout_s)
+            if dead:
+                logger.info("GC pruned: %s", dead)
+
+            if store.providers:
+                # Poll in thread pool (providers use sync urllib)
+                results = await loop.run_in_executor(None, _poll_all_providers, store)
+
+                # Compute allocations
+                instances = list(store.instances.values())
+                allocations = allocator.allocate(instances, config.hard_caps)
+
+                # Store allocations for API access
+                store._last_allocations = allocations  # noqa: SLF001
+                store._last_results = results  # noqa: SLF001
+
+                logger.info(
+                    "Poll done: %d providers, %d instances",
+                    len(results),
+                    len(instances),
+                )
+            else:
+                logger.debug("No providers registered, skipping poll")
+        except Exception:
+            # Never let an exception terminate the polling loop — log and continue.
+            logger.exception("Poll cycle failed, continuing")
 
         # Sleep with event for forced repoll
         interval = store.effective_poll_interval()

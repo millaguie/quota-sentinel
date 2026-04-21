@@ -8,6 +8,7 @@ from quota_sentinel.providers.alibaba import AlibabaUsageProvider
 from quota_sentinel.providers.base import UsageProvider, UsageResult, WindowUsage
 from quota_sentinel.providers.claude import ClaudeUsageProvider
 from quota_sentinel.providers.copilot import CopilotUsageProvider
+from quota_sentinel.providers.crofai import CrofAIUsageProvider
 from quota_sentinel.providers.deepseek import DeepSeekUsageProvider
 from quota_sentinel.providers.minimax import MiniMaxUsageProvider
 from quota_sentinel.providers.zai import ZaiUsageProvider
@@ -33,6 +34,9 @@ AUTH_KEY_TO_PROVIDER: dict[str, str] = {
     "alibaba-coding-plan": "alibaba",
     "dashscope": "alibaba",
     "alibaba": "alibaba",
+    "crofai": "crofai",
+    "CrofAI": "crofai",
+    "crof": "crofai",
 }
 
 
@@ -70,5 +74,10 @@ def create_provider(name: str, config: dict[str, Any]) -> UsageProvider:
         return AlibabaUsageProvider(
             api_token=config["key"],
             region=config.get("region", "intl"),
+        )
+    if name == "crofai":
+        return CrofAIUsageProvider(
+            session_cookie=config.get("session_cookie", ""),
+            api_token=config.get("key", ""),
         )
     raise ValueError(f"Unknown provider: {name}")
