@@ -80,10 +80,24 @@ def health(host: str, port: int) -> None:
 @cli.command()
 @click.argument("opencode_json", default="opencode.json", type=click.Path(exists=True))
 @click.option("--sentinel-url", default="http://127.0.0.1:7878", show_default=True)
-@click.option("--poll-interval", default=60, type=int, show_default=True, help="Seconds between quota checks.")
-@click.option("--recovery-hold", default=3, type=int, show_default=True, help="Consecutive GREEN polls before restoring original model.")
+@click.option(
+    "--poll-interval",
+    default=60,
+    type=int,
+    show_default=True,
+    help="Seconds between quota checks.",
+)
+@click.option(
+    "--recovery-hold",
+    default=3,
+    type=int,
+    show_default=True,
+    help="Consecutive GREEN polls before restoring original model.",
+)
 @click.option("--once", is_flag=True, help="Run one check cycle and exit.")
-@click.option("--restore", is_flag=True, help="Restore all agents to original models and exit.")
+@click.option(
+    "--restore", is_flag=True, help="Restore all agents to original models and exit."
+)
 def switch(
     opencode_json: str,
     sentinel_url: str,

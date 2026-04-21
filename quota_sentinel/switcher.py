@@ -94,11 +94,17 @@ class SwitcherState:
 
     def save(self, path: Path) -> None:
         tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({
-            "original_models": self.original_models,
-            "active_models": self.active_models,
-            "switched_at": self.switched_at,
-        }, indent=2) + "\n")
+        tmp.write_text(
+            json.dumps(
+                {
+                    "original_models": self.original_models,
+                    "active_models": self.active_models,
+                    "switched_at": self.switched_at,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
         tmp.rename(path)
 
     @classmethod
@@ -237,7 +243,9 @@ class ModelSwitcher:
         try:
             r = subprocess.run(
                 ["gh", "auth", "token"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
             if r.returncode == 0 and r.stdout.strip():
                 auth["github_token"] = r.stdout.strip()
@@ -301,13 +309,23 @@ class ModelSwitcher:
 
         logger.info(
             "Starting Quota Sentinel at %s:%d (log: %s)",
-            host, port, _SENTINEL_LOG_FILE,
+            host,
+            port,
+            _SENTINEL_LOG_FILE,
         )
 
         try:
             proc = subprocess.Popen(
-                [sys.executable, "-m", "quota_sentinel.cli", "start",
-                 "--host", host, "--port", str(port)],
+                [
+                    sys.executable,
+                    "-m",
+                    "quota_sentinel.cli",
+                    "start",
+                    "--host",
+                    host,
+                    "--port",
+                    str(port),
+                ],
                 stdout=log_fh,
                 stderr=log_fh,
                 start_new_session=True,  # detach from our process group
@@ -332,14 +350,16 @@ class ModelSwitcher:
             if proc.poll() is not None:
                 logger.error(
                     "Quota Sentinel exited immediately (rc=%d) — check %s",
-                    proc.returncode, _SENTINEL_LOG_FILE,
+                    proc.returncode,
+                    _SENTINEL_LOG_FILE,
                 )
                 _SENTINEL_PID_FILE.unlink(missing_ok=True)
                 return False
 
         logger.error(
             "Quota Sentinel did not start within %ds — check %s",
-            _SENTINEL_START_TIMEOUT, _SENTINEL_LOG_FILE,
+            _SENTINEL_START_TIMEOUT,
+            _SENTINEL_LOG_FILE,
         )
         return False
 
@@ -366,7 +386,9 @@ class ModelSwitcher:
             )
             self._instance_id = resp["instance_id"]
             self._api_key = resp["api_key"]
-            logger.info("Registered with Quota Sentinel (instance %s)", self._instance_id)
+            logger.info(
+                "Registered with Quota Sentinel (instance %s)", self._instance_id
+            )
             return True
         except Exception as e:  # noqa: BLE001
             logger.warning("Sentinel registration failed: %s", e)
@@ -405,7 +427,9 @@ class ModelSwitcher:
                 f"{self.sentinel_url}/v1/providers",
                 headers={"X-API-Key": self._api_key},
             )
-            return {name: pdata.get("status", "UNKNOWN") for name, pdata in data.items()}
+            return {
+                name: pdata.get("status", "UNKNOWN") for name, pdata in data.items()
+            }
         except Exception as e:  # noqa: BLE001
             logger.warning("Failed to get provider statuses: %s", e)
             return {}
@@ -477,11 +501,18 @@ class ModelSwitcher:
 
             current = self.state.active_models.get(agent_name, "")
             original = self.state.original_models.get(agent_name, "")
-            direction = "→ original" if target == original else f"→ fallback ({self._provider(target)})"
+            direction = (
+                "→ original"
+                if target == original
+                else f"→ fallback ({self._provider(target)})"
+            )
 
             logger.info(
                 "  %s: %s %s (%s)",
-                agent_name, current, direction, target,
+                agent_name,
+                current,
+                direction,
+                target,
             )
 
             agents[agent_name]["model"] = target
@@ -525,7 +556,9 @@ class ModelSwitcher:
                 len(on_fallback),
             )
         else:
-            logger.info("All providers GREEN | Agents on fallback: %d", len(on_fallback))
+            logger.info(
+                "All providers GREEN | Agents on fallback: %d", len(on_fallback)
+            )
 
         return summary
 
