@@ -48,6 +48,12 @@ class CrofAIUsageProvider(UsageProvider):
     def __init__(self, session_cookie: str = "", api_token: str = ""):
         self.session_cookie = session_cookie
         self.api_token = api_token  # unused for quota, kept for fingerprinting
+        # The /u_v2/get_usable_requests endpoint often returns just the number
+        # of remaining requests (plain JSON number). Without a plan ceiling in
+        # the response, we treat the first observed value as the reference
+        # "full quota" and compute utilization from there (like deepseek/chutes
+        # balance tracking).
+        self._reference_plan: int | None = None
 
     def fetch(self) -> UsageResult:
         if not self.session_cookie:
@@ -76,13 +82,20 @@ class CrofAIUsageProvider(UsageProvider):
         elif isinstance(data, (int, float)):
             usable = int(data)
 
-        if usable is None or plan is None or plan <= 0:
+        if usable is None:
             return UsageResult(
                 provider=self.name, error="malformed usable_requests response"
             )
 
+        # If plan wasn't provided, use reference tracking: first-seen value is
+        # our best guess at "full plan capacity".
+        if plan is None or plan <= 0:
+            if self._reference_plan is None or usable > self._reference_plan:
+                self._reference_plan = max(usable, 1)
+            plan = self._reference_plan
+
         used = max(plan - usable, 0)
-        utilization = min(used / plan * 100, 100.0)
+        utilization = min(used / plan * 100, 100.0) if plan > 0 else 0.0
 
         metadata: dict[str, Any] = {
             "usable_requests": usable,
