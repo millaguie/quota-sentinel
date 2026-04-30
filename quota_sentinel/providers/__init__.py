@@ -11,6 +11,7 @@ from quota_sentinel.providers.copilot import CopilotUsageProvider
 from quota_sentinel.providers.crofai import CrofAIUsageProvider
 from quota_sentinel.providers.deepseek import DeepSeekUsageProvider
 from quota_sentinel.providers.minimax import MiniMaxUsageProvider
+from quota_sentinel.providers.synthetic import SyntheticUsageProvider
 from quota_sentinel.providers.zai import ZaiUsageProvider
 
 __all__ = [
@@ -37,6 +38,7 @@ AUTH_KEY_TO_PROVIDER: dict[str, str] = {
     "crofai": "crofai",
     "CrofAI": "crofai",
     "crof": "crofai",
+    "synthetic": "synthetic",
 }
 
 
@@ -80,4 +82,6 @@ def create_provider(name: str, config: dict[str, Any]) -> UsageProvider:
             session_cookie=config.get("session_cookie", ""),
             api_token=config.get("key", ""),
         )
+    if name == "synthetic":
+        return SyntheticUsageProvider(api_token=config["key"])
     raise ValueError(f"Unknown provider: {name}")
