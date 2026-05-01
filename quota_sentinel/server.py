@@ -443,7 +443,7 @@ async def providers_summary(request: Request) -> JSONResponse:
     store = _get_store()
     config = _get_config()
 
-    from quota_sentinel.engine import get_hard_cap, _window_status
+    from quota_sentinel.engine import _window_status, get_hard_cap, status_to_state
 
     out: dict[str, Any] = {}
     for pe in store.unique_providers():
@@ -451,6 +451,7 @@ async def providers_summary(request: Request) -> JSONResponse:
         if not pe.last_result or pe.last_result.error:
             out[pname] = {
                 "status": "UNKNOWN",
+                "state": status_to_state("UNKNOWN"),
                 "error": pe.last_result.error if pe.last_result else "no data",
             }
             continue
@@ -468,6 +469,7 @@ async def providers_summary(request: Request) -> JSONResponse:
                 "velocity_pct_per_hour": round(vel, 1),
                 "resets_at": wd.resets_at.isoformat() if wd.resets_at else None,
                 "status": ws,
+                "state": status_to_state(ws),
             }
             if wd.metadata:
                 w2["metadata"] = wd.metadata
@@ -475,7 +477,11 @@ async def providers_summary(request: Request) -> JSONResponse:
             if status_order.get(ws, 0) > status_order.get(worst, 0):
                 worst = ws
 
-        out[pname] = {"status": worst, "windows": windows}
+        out[pname] = {
+            "status": worst,
+            "state": status_to_state(worst),
+            "windows": windows,
+        }
 
     return JSONResponse(out)
 
@@ -507,11 +513,14 @@ async def provider_detail(request: Request) -> JSONResponse:
               $ref: '#/components/schemas/Error'
     """
     store = _get_store()
+    config = _get_config()
     name = request.path_params["name"]
 
     entries = [pe for pe in store.unique_providers() if pe.provider_name == name]
     if not entries:
         return JSONResponse({"error": "not found"}, status_code=404)
+
+    from quota_sentinel.engine import _window_status, get_hard_cap, status_to_state
 
     pe = entries[0]
     result: dict[str, Any] = {
@@ -521,17 +530,32 @@ async def provider_detail(request: Request) -> JSONResponse:
     }
     if pe.last_result:
         if pe.last_result.error:
+            result["status"] = "UNKNOWN"
+            result["state"] = status_to_state("UNKNOWN")
             result["error"] = pe.last_result.error
         else:
-            windows_out = {}
+            worst = "GREEN"
+            status_order = {"GREEN": 0, "YELLOW": 1, "RED": 2}
+            windows_out: dict[str, Any] = {}
             for wn, wd in pe.last_result.windows.items():
+                tracker = store.velocities.get(name, {}).get(wn)
+                vel = tracker.velocity_pct_per_hour() if tracker else 0.0
+                cap = get_hard_cap(name, wn, config.hard_caps)
+                ws = _window_status(wd.utilization, vel, cap, config.safety_margin_min)
                 w3: dict[str, Any] = {
                     "utilization": round(wd.utilization, 1),
+                    "velocity_pct_per_hour": round(vel, 1),
                     "resets_at": wd.resets_at.isoformat() if wd.resets_at else None,
+                    "status": ws,
+                    "state": status_to_state(ws),
                 }
                 if wd.metadata:
                     w3["metadata"] = wd.metadata
                 windows_out[wn] = w3
+                if status_order.get(ws, 0) > status_order.get(worst, 0):
+                    worst = ws
+            result["status"] = worst
+            result["state"] = status_to_state(worst)
             result["windows"] = windows_out
     return JSONResponse(result)
 

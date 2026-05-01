@@ -40,6 +40,16 @@ OPENAPI_BASE: dict = {
                 "type": "string",
                 "enum": ["GREEN", "YELLOW", "RED", "UNKNOWN"],
             },
+            "ProviderState": {
+                "type": "string",
+                "enum": ["healthy", "degraded", "exhausted", "unknown"],
+                "description": (
+                    "Friendly equivalent of HealthStatus for downstream "
+                    "consumers (Hefestia model-group resolver, dashboards). "
+                    "GREEN→healthy, YELLOW→degraded, RED→exhausted, "
+                    "UNKNOWN→unknown."
+                ),
+            },
             "Recommendation": {
                 "type": "string",
                 "enum": ["PROCEED", "PROCEED_SMALL_ONLY", "STOP"],
@@ -145,6 +155,7 @@ OPENAPI_BASE: dict = {
                         "nullable": True,
                     },
                     "status": {"$ref": "#/components/schemas/HealthStatus"},
+                    "state": {"$ref": "#/components/schemas/ProviderState"},
                 },
             },
             # ── Instance status (TOKEN_STATUS) ─────────────────
@@ -210,6 +221,7 @@ OPENAPI_BASE: dict = {
                 "required": ["status"],
                 "properties": {
                     "status": {"$ref": "#/components/schemas/HealthStatus"},
+                    "state": {"$ref": "#/components/schemas/ProviderState"},
                     "error": {"type": "string"},
                     "windows": {
                         "type": "object",
@@ -226,19 +238,13 @@ OPENAPI_BASE: dict = {
                     "name": {"type": "string"},
                     "fingerprint": {"type": "string"},
                     "subscribers": {"type": "array", "items": {"type": "string"}},
+                    "status": {"$ref": "#/components/schemas/HealthStatus"},
+                    "state": {"$ref": "#/components/schemas/ProviderState"},
                     "error": {"type": "string"},
                     "windows": {
                         "type": "object",
                         "additionalProperties": {
-                            "type": "object",
-                            "properties": {
-                                "utilization": {"type": "number"},
-                                "resets_at": {
-                                    "type": "string",
-                                    "format": "date-time",
-                                    "nullable": True,
-                                },
-                            },
+                            "$ref": "#/components/schemas/WindowStatus"
                         },
                     },
                 },

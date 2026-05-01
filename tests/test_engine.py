@@ -12,6 +12,7 @@ from quota_sentinel.engine import (
     _window_status,
     evaluate,
     get_hard_cap,
+    status_to_state,
 )
 from quota_sentinel.providers.base import UsageResult, WindowUsage
 
@@ -203,6 +204,29 @@ class TestGetHardCap:
         """Returns 85.0 when caps dict is empty."""
         result = get_hard_cap("claude", "hourly", {})
         assert result == 85.0
+
+
+# =============================================================================
+# status_to_state Tests
+# =============================================================================
+
+
+class TestStatusToState:
+    """Maps the legacy traffic-light status to healthy/degraded/exhausted."""
+
+    @pytest.mark.parametrize(
+        ("status", "expected"),
+        [
+            ("GREEN", "healthy"),
+            ("YELLOW", "degraded"),
+            ("RED", "exhausted"),
+            ("UNKNOWN", "unknown"),
+            ("", "unknown"),
+            ("BOGUS", "unknown"),
+        ],
+    )
+    def test_maps_status_to_state(self, status, expected):
+        assert status_to_state(status) == expected
 
 
 # =============================================================================

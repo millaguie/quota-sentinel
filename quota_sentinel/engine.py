@@ -93,6 +93,22 @@ def _window_status(
     return "GREEN"
 
 
+# Mapping from the legacy GREEN/YELLOW/RED traffic-light status to the
+# explicit healthy/degraded/exhausted vocabulary that downstream consumers
+# (Hefestia model-group resolver, dashboards, alerting) prefer.  Both
+# fields are exposed in the API for backwards compatibility.
+_STATUS_TO_STATE = {
+    "GREEN": "healthy",
+    "YELLOW": "degraded",
+    "RED": "exhausted",
+}
+
+
+def status_to_state(status: str) -> str:
+    """Map a traffic-light status to a `healthy|degraded|exhausted|unknown` state."""
+    return _STATUS_TO_STATE.get(status, "unknown")
+
+
 def evaluate(
     results: dict[str, UsageResult],
     velocities: dict[str, dict[str, VelocityTracker]],
