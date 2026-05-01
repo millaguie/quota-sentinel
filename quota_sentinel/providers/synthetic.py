@@ -69,10 +69,17 @@ class SyntheticUsageProvider(UsageProvider):
         windows: dict[str, WindowUsage] = {}
 
         # ── subscription (daily) ────────────────────────────────────
+        # Only emit when we've actually used part of it.  On
+        # pay-per-use plans the API still returns ``limit=500,
+        # requests=0`` for ``subscription`` even though the binding
+        # constraint is the weekly $ cap; including a healthy 0%
+        # window alongside the real ones just adds noise to the UI.
+        # Once the user hits their first subscription request the
+        # window reappears and tracks normally.
         sub = data.get("subscription") or {}
         sub_limit = float(sub.get("limit") or 0)
         sub_requests = float(sub.get("requests") or 0)
-        if sub_limit > 0:
+        if sub_limit > 0 and sub_requests > 0:
             windows["subscription"] = WindowUsage(
                 utilization=min(100.0, (sub_requests / sub_limit) * 100.0),
                 resets_at=_parse_iso(sub.get("renewsAt") or sub.get("renews_at")),
