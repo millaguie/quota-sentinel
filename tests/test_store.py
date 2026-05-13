@@ -371,6 +371,41 @@ class TestStoreRegisterInstance:
         provider_entry = list(store.providers.values())[0]
         assert provider_entry.subscribers == {"inst-1", "inst-2"}
 
+    def test_re_register_same_key_refreshes_provider_config(self):
+        """Re-registering with same key replaces the provider object so
+        updated provider_config (group_id, session_cookie, ...) takes effect.
+        """
+        store = Store()
+        old_provider = MagicMock(spec=UsageProvider)
+        new_provider = MagicMock(spec=UsageProvider)
+
+        store.register_instance(
+            instance_id="inst-1",
+            project_name="project-1",
+            framework="opencode",
+            poll_interval=60,
+            providers={"crofai": old_provider},
+            keys={"crofai": "shared_key"},
+        )
+
+        # Same client re-registers (e.g. after the user updated the
+        # crofai session_cookie via hefestia's /provider-config PATCH).
+        store.register_instance(
+            instance_id="inst-2",
+            project_name="project-1",
+            framework="opencode",
+            poll_interval=60,
+            providers={"crofai": new_provider},
+            keys={"crofai": "shared_key"},
+        )
+
+        # Pool still has a single entry, but the held provider is the
+        # NEW one (with the refreshed config baked in).
+        assert len(store.providers) == 1
+        provider_entry = list(store.providers.values())[0]
+        assert provider_entry.provider is new_provider
+        assert provider_entry.subscribers == {"inst-1", "inst-2"}
+
     def test_different_keys_create_separate_entries(self):
         """Different api_keys create separate provider entries."""
         store = Store()

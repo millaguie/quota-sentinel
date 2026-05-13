@@ -92,7 +92,16 @@ class Store:
             pool_key = f"{pname}:{fp}"
 
             if pool_key in self.providers:
-                # Same key already registered — just add subscriber
+                # Same provider+key fingerprint already in the pool — refresh
+                # the provider object so any updated ``provider_config``
+                # (e.g. minimax ``group_id``, crofai ``session_cookie``,
+                # github-copilot ``github_token``) sent by the re-registering
+                # client takes effect on the next daemon tick.  Without this
+                # the first registration's provider stuck around with stale
+                # creds and subscribers reported "unauthenticated" forever
+                # (the pool-dedup short-circuit silently discarded the new
+                # provider built from the updated config).
+                self.providers[pool_key].provider = provider
                 self.providers[pool_key].subscribers.add(instance_id)
             else:
                 # New provider+key combination
