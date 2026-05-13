@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from typing import Any
@@ -11,6 +12,21 @@ from quota_sentinel.providers.base import UsageProvider, UsageResult, WindowUsag
 
 USABLE_REQUESTS_URL = "https://crof.ai/u_v2/get_usable_requests"
 CREDITS_URL = "https://crof.ai/user-api/credits"
+DASHBOARD_URL = "https://crof.ai/dashboard"
+
+# Pattern matching the dashboard's server-rendered ``usable / plan`` display:
+#
+#     <pretty id="usable_requests">248/7500</pretty>
+#
+# crof.ai computes the plan ceiling server-side based on the user's plan name
+# (encoded in the session cookie — e.g. ``plan: "int"`` → 7500/day) and only
+# exposes the ceiling through this rendered string.  There's no JSON endpoint
+# that returns the plan size, so we scrape it once and cache the value on the
+# provider instance.
+_PLAN_RE = re.compile(
+    r'<pretty[^>]*id="usable_requests"[^>]*>\s*\d+\s*/\s*(\d+)\s*</pretty>',
+    re.IGNORECASE,
+)
 
 _BROWSER_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
@@ -35,6 +51,33 @@ def _get_with_cookie(url: str, session_cookie: str, timeout: int = 10) -> Any:
         return body.strip()
 
 
+def _fetch_plan_from_dashboard(session_cookie: str, timeout: int = 10) -> int | None:
+    """Scrape the daily request plan size from the dashboard HTML.
+
+    Returns the integer ceiling (e.g. ``7500``) or ``None`` if the page
+    couldn't be fetched / parsed.  Callers should cache the result —
+    the ceiling is static per plan, so one scrape per process is enough.
+    """
+    headers = {
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Cookie": f"session={session_cookie}",
+        "User-Agent": _BROWSER_UA,
+    }
+    try:
+        req = urllib.request.Request(DASHBOARD_URL, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode(errors="replace")
+    except Exception:
+        return None
+    m = _PLAN_RE.search(body)
+    if not m:
+        return None
+    try:
+        return int(m.group(1))
+    except (TypeError, ValueError):
+        return None
+
+
 class CrofAIUsageProvider(UsageProvider):
     """CrofAI — subscription request quota via authenticated dashboard endpoint.
 
@@ -48,12 +91,17 @@ class CrofAIUsageProvider(UsageProvider):
     def __init__(self, session_cookie: str = "", api_token: str = ""):
         self.session_cookie = session_cookie
         self.api_token = api_token  # unused for quota, kept for fingerprinting
-        # The /u_v2/get_usable_requests endpoint often returns just the number
-        # of remaining requests (plain JSON number). Without a plan ceiling in
-        # the response, we treat the first observed value as the reference
-        # "full quota" and compute utilization from there (like deepseek/chutes
-        # balance tracking).
+        # The /u_v2/get_usable_requests endpoint returns ONLY the remaining
+        # count (plain JSON number, e.g. ``248``).  crof.ai's API doesn't
+        # expose the plan ceiling anywhere — only the dashboard HTML
+        # renders it (e.g. ``248/7500``).  We scrape it once via
+        # ``_fetch_plan_from_dashboard`` and cache it on the instance.
+        # If the scrape fails (network blip, plan element renamed), fall
+        # back to ``_reference_plan`` — the max-ever-seen heuristic —
+        # which at least self-corrects after a daily reset bumps the
+        # ``usable`` count back to the real ceiling.
         self._reference_plan: int | None = None
+        self._scraped_plan: int | None = None
 
     def fetch(self) -> UsageResult:
         if not self.session_cookie:
@@ -87,12 +135,24 @@ class CrofAIUsageProvider(UsageProvider):
                 provider=self.name, error="malformed usable_requests response"
             )
 
-        # If plan wasn't provided, use reference tracking: first-seen value is
-        # our best guess at "full plan capacity".
+        # Plan ceiling resolution order:
+        # 1. Field in the JSON response (in case crof.ai ever ships one).
+        # 2. Cached scrape of the dashboard HTML (the real source of truth —
+        #    rendered as ``<pretty id="usable_requests">248/7500</pretty>``).
+        # 3. Reference-plan heuristic (max value ever seen on this provider).
+        #
+        # Only attempt the scrape when we don't have a JSON plan and the
+        # cached scrape value is still missing — once we know the ceiling
+        # it doesn't change for the life of the plan.
         if plan is None or plan <= 0:
-            if self._reference_plan is None or usable > self._reference_plan:
-                self._reference_plan = max(usable, 1)
-            plan = self._reference_plan
+            if self._scraped_plan is None:
+                self._scraped_plan = _fetch_plan_from_dashboard(self.session_cookie)
+            if self._scraped_plan and self._scraped_plan > 0:
+                plan = self._scraped_plan
+            else:
+                if self._reference_plan is None or usable > self._reference_plan:
+                    self._reference_plan = max(usable, 1)
+                plan = self._reference_plan
 
         used = max(plan - usable, 0)
         utilization = min(used / plan * 100, 100.0) if plan > 0 else 0.0
