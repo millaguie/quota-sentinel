@@ -11,6 +11,7 @@ from quota_sentinel.providers.copilot import CopilotUsageProvider
 from quota_sentinel.providers.crofai import CrofAIUsageProvider
 from quota_sentinel.providers.deepseek import DeepSeekUsageProvider
 from quota_sentinel.providers.minimax import MiniMaxUsageProvider
+from quota_sentinel.providers.opencode_go import OpencodeGoUsageProvider
 from quota_sentinel.providers.synthetic import SyntheticUsageProvider
 from quota_sentinel.providers.zai import ZaiUsageProvider
 
@@ -39,6 +40,7 @@ AUTH_KEY_TO_PROVIDER: dict[str, str] = {
     "CrofAI": "crofai",
     "crof": "crofai",
     "synthetic": "synthetic",
+    "opencode-go": "opencode_go",
 }
 
 
@@ -84,4 +86,10 @@ def create_provider(name: str, config: dict[str, Any]) -> UsageProvider:
         )
     if name == "synthetic":
         return SyntheticUsageProvider(api_token=config["key"])
+    if name == "opencode_go":
+        return OpencodeGoUsageProvider(
+            workspace_id=config.get("workspace_id", ""),
+            auth_cookie=config.get("auth_cookie", ""),
+            api_token=config.get("key", ""),
+        )
     raise ValueError(f"Unknown provider: {name}")
