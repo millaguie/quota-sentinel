@@ -16,15 +16,19 @@ DASHBOARD_URL = "https://crof.ai/dashboard"
 
 # Pattern matching the dashboard's server-rendered ``usable / plan`` display:
 #
-#     <pretty id="usable_requests">248/7500</pretty>
+#     <pretty id="usable_requests">2872.5/6250</pretty>
 #
 # crof.ai computes the plan ceiling server-side based on the user's plan name
-# (encoded in the session cookie — e.g. ``plan: "int"`` → 7500/day) and only
+# (encoded in the session cookie — e.g. ``plan: "ent1"`` → 6250/day) and only
 # exposes the ceiling through this rendered string.  There's no JSON endpoint
 # that returns the plan size, so we scrape it once and cache the value on the
 # provider instance.
+#
+# The ``usable`` numerator is fractional now (e.g. ``2872.5``), so the
+# numerator pattern must allow a decimal — an integer-only ``\d+`` stopped
+# matching and silently dropped the plan ceiling.
 _PLAN_RE = re.compile(
-    r'<pretty[^>]*id="usable_requests"[^>]*>\s*\d+\s*/\s*(\d+)\s*</pretty>',
+    r'<pretty[^>]*id="usable_requests"[^>]*>\s*\d+(?:\.\d+)?\s*/\s*(\d+)\s*</pretty>',
     re.IGNORECASE,
 )
 
@@ -92,7 +96,8 @@ class CrofAIUsageProvider(UsageProvider):
         self.session_cookie = session_cookie
         self.api_token = api_token  # unused for quota, kept for fingerprinting
         # The /u_v2/get_usable_requests endpoint returns ONLY the remaining
-        # count (plain JSON number, e.g. ``248``).  crof.ai's API doesn't
+        # count as a bare JSON number — fractional now, e.g. ``2872.5``.
+        # crof.ai's API doesn't
         # expose the plan ceiling anywhere — only the dashboard HTML
         # renders it (e.g. ``248/7500``).  We scrape it once via
         # ``_fetch_plan_from_dashboard`` and cache it on the instance.
@@ -116,11 +121,11 @@ class CrofAIUsageProvider(UsageProvider):
         except Exception as e:
             return UsageResult(provider=self.name, error=f"unexpected error: {e}")
 
-        usable: int | None = None
+        usable: float | None = None
         plan: int | None = None
         if isinstance(data, dict):
             try:
-                usable = int(data.get("usable_requests") or 0)
+                usable = float(data.get("usable_requests") or 0)
             except (TypeError, ValueError):
                 usable = None
             try:
@@ -128,7 +133,7 @@ class CrofAIUsageProvider(UsageProvider):
             except (TypeError, ValueError):
                 plan = None
         elif isinstance(data, (int, float)):
-            usable = int(data)
+            usable = float(data)
 
         if usable is None:
             return UsageResult(
@@ -151,7 +156,7 @@ class CrofAIUsageProvider(UsageProvider):
                 plan = self._scraped_plan
             else:
                 if self._reference_plan is None or usable > self._reference_plan:
-                    self._reference_plan = max(usable, 1)
+                    self._reference_plan = max(int(usable), 1)
                 plan = self._reference_plan
 
         used = max(plan - usable, 0)
