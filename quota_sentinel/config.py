@@ -13,6 +13,7 @@ DEFAULT_HARD_CAPS: dict[str, float] = {
     "minimax_default": 85.0,
     "deepseek_default": 85.0,
     "alibaba_default": 80.0,
+    "xiaomi_default": 85.0,
 }
 
 

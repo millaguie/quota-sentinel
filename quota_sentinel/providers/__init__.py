@@ -13,6 +13,7 @@ from quota_sentinel.providers.deepseek import DeepSeekUsageProvider
 from quota_sentinel.providers.minimax import MiniMaxUsageProvider
 from quota_sentinel.providers.opencode_go import OpencodeGoUsageProvider
 from quota_sentinel.providers.synthetic import SyntheticUsageProvider
+from quota_sentinel.providers.xiaomi import XiaomiTokenPlanUsageProvider
 from quota_sentinel.providers.zai import ZaiUsageProvider
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "WindowUsage",
     "create_provider",
     "AUTH_KEY_TO_PROVIDER",
+    "XiaomiTokenPlanUsageProvider",
 ]
 
 # Maps opencode auth.json key names → provider names
@@ -41,6 +43,16 @@ AUTH_KEY_TO_PROVIDER: dict[str, str] = {
     "crof": "crofai",
     "synthetic": "synthetic",
     "opencode-go": "opencode_go",
+    # Xiaomi MiMo Token Plan — cluster suffix (ams/cn/sgp) only affects model
+    # routing; the usage console is the same single host for all regions.
+    "xiaomi-token-plan-ams": "xiaomi",
+    "xiaomi-token-plan-cn": "xiaomi",
+    "xiaomi-token-plan-sgp": "xiaomi",
+    "xiaomi-token-plan": "xiaomi",
+    "xiaomi-mimo": "xiaomi",
+    "xiaomi": "xiaomi",
+    "mimo-token-plan": "xiaomi",
+    "mimo": "xiaomi",
 }
 
 
@@ -90,6 +102,11 @@ def create_provider(name: str, config: dict[str, Any]) -> UsageProvider:
         return OpencodeGoUsageProvider(
             workspace_id=config.get("workspace_id", ""),
             auth_cookie=config.get("auth_cookie", ""),
+            api_token=config.get("key", ""),
+        )
+    if name == "xiaomi":
+        return XiaomiTokenPlanUsageProvider(
+            session_cookie=config.get("session_cookie", ""),
             api_token=config.get("key", ""),
         )
     raise ValueError(f"Unknown provider: {name}")
