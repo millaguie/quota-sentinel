@@ -106,6 +106,20 @@ class OpencodeGoUsageProvider(UsageProvider):
         # ``/zen/go/v1`` API has no usage endpoint, so we never use it.
         self.api_token = api_token
 
+    def merge_credentials_from(self, other):
+        """Adopt ``other``'s auth_cookie / workspace_id when ours are empty.
+
+        Lets a desktop client that re-registers without a fresh browser
+        cookie keep using the cookie a programmatic client already
+        provided for the same opencode-go fingerprint.
+        """
+        inherited_cookie = getattr(other, "auth_cookie", "")
+        if not self.auth_cookie and inherited_cookie:
+            self.auth_cookie = inherited_cookie
+        inherited_ws = getattr(other, "workspace_id", "")
+        if not self.workspace_id and inherited_ws:
+            self.workspace_id = inherited_ws
+
     def _fetch_html(self, timeout: int = 10) -> str:
         url = f"{DASHBOARD_URL_PREFIX}{urllib.parse.quote(self.workspace_id, safe='')}{DASHBOARD_URL_SUFFIX}"
         headers = {

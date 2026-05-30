@@ -98,9 +98,7 @@ def test_fetch_requires_session_cookie():
 
 def test_fetch_parses_all_three_windows():
     provider = XiaomiTokenPlanUsageProvider(session_cookie="abc")
-    with patch(
-        "quota_sentinel.providers.xiaomi.http_get", return_value=GOOD_RESPONSE
-    ):
+    with patch("quota_sentinel.providers.xiaomi.http_get", return_value=GOOD_RESPONSE):
         result = provider.fetch()
 
     assert result.error is None
@@ -303,3 +301,39 @@ def test_create_provider_returns_xiaomi():
     assert isinstance(provider, XiaomiTokenPlanUsageProvider)
     assert provider.session_cookie == "abc"
     assert provider.api_token == "tp-xxx"
+
+
+# ── Credential merging (cookie sharing across clients) ────────────────────
+
+
+def test_merge_credentials_adopts_cookie_when_empty():
+    """An empty-cookie client inherits the cookie from a peer sharing
+    the same ``tp-*`` fingerprint."""
+    empty = XiaomiTokenPlanUsageProvider(session_cookie="", api_token="tp-x")
+    holder = XiaomiTokenPlanUsageProvider(
+        session_cookie="from-browser", api_token="tp-x"
+    )
+
+    empty.merge_credentials_from(holder)
+
+    assert empty.session_cookie == "from-browser"
+
+
+def test_merge_credentials_keeps_own_cookie_when_present():
+    """A client with its own fresh cookie wins — no overwrite."""
+    fresh = XiaomiTokenPlanUsageProvider(session_cookie="mine", api_token="tp-x")
+    stale = XiaomiTokenPlanUsageProvider(session_cookie="theirs", api_token="tp-x")
+
+    fresh.merge_credentials_from(stale)
+
+    assert fresh.session_cookie == "mine"
+
+
+def test_merge_credentials_no_op_when_other_is_empty():
+    """Nothing to inherit from an empty-cookie peer."""
+    self_ = XiaomiTokenPlanUsageProvider(session_cookie="", api_token="tp-x")
+    peer = XiaomiTokenPlanUsageProvider(session_cookie="", api_token="tp-x")
+
+    self_.merge_credentials_from(peer)
+
+    assert self_.session_cookie == ""
