@@ -406,6 +406,36 @@ class TestStoreRegisterInstance:
         assert provider_entry.provider is new_provider
         assert provider_entry.subscribers == {"inst-1", "inst-2"}
 
+    def test_re_register_calls_merge_credentials(self):
+        """Re-registering with same key should let the new provider
+        inherit still-valid creds from the previous holder via
+        ``merge_credentials_from`` before being swapped in.
+        """
+        store = Store()
+        old_provider = MagicMock(spec=UsageProvider)
+        new_provider = MagicMock(spec=UsageProvider)
+
+        store.register_instance(
+            instance_id="inst-1",
+            project_name="project-1",
+            framework="opencode",
+            poll_interval=60,
+            providers={"xiaomi": old_provider},
+            keys={"xiaomi": "shared_key"},
+        )
+        store.register_instance(
+            instance_id="inst-2",
+            project_name="project-2",
+            framework="opencode",
+            poll_interval=60,
+            providers={"xiaomi": new_provider},
+            keys={"xiaomi": "shared_key"},
+        )
+
+        # The new provider must have been given a chance to copy the
+        # old provider's cookie before being swapped into the pool.
+        new_provider.merge_credentials_from.assert_called_once_with(old_provider)
+
     def test_different_keys_create_separate_entries(self):
         """Different api_keys create separate provider entries."""
         store = Store()

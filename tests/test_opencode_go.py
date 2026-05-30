@@ -224,3 +224,32 @@ def test_create_provider_returns_opencode_go():
     assert provider.workspace_id == "ws"
     assert provider.auth_cookie == "c"
     assert provider.api_token == "sk-xxx"
+
+
+# ── Credential merging (cookie sharing across clients) ────────────────────
+
+
+def test_merge_credentials_adopts_cookie_when_empty():
+    empty = OpencodeGoUsageProvider(workspace_id="", auth_cookie="", api_token="sk-x")
+    holder = OpencodeGoUsageProvider(
+        workspace_id="ws-1", auth_cookie="from-browser", api_token="sk-x"
+    )
+
+    empty.merge_credentials_from(holder)
+
+    assert empty.auth_cookie == "from-browser"
+    assert empty.workspace_id == "ws-1"
+
+
+def test_merge_credentials_keeps_own_cookie_when_present():
+    fresh = OpencodeGoUsageProvider(
+        workspace_id="ws-mine", auth_cookie="mine", api_token="sk-x"
+    )
+    stale = OpencodeGoUsageProvider(
+        workspace_id="ws-theirs", auth_cookie="theirs", api_token="sk-x"
+    )
+
+    fresh.merge_credentials_from(stale)
+
+    assert fresh.auth_cookie == "mine"
+    assert fresh.workspace_id == "ws-mine"

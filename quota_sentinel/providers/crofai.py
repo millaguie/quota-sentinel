@@ -95,6 +95,17 @@ class CrofAIUsageProvider(UsageProvider):
     def __init__(self, session_cookie: str = "", api_token: str = ""):
         self.session_cookie = session_cookie
         self.api_token = api_token  # unused for quota, kept for fingerprinting
+
+    def merge_credentials_from(self, other):
+        """Adopt ``other``'s session_cookie when our own is empty.
+
+        Lets a desktop client that re-registers without a fresh browser
+        cookie keep using the cookie a programmatic client already
+        provided for the same nahcrof_* fingerprint.
+        """
+        inherited = getattr(other, "session_cookie", "")
+        if not self.session_cookie and inherited:
+            self.session_cookie = inherited
         # The /u_v2/get_usable_requests endpoint returns ONLY the remaining
         # count as a bare JSON number — fractional now, e.g. ``2872.5``.
         # crof.ai's API doesn't

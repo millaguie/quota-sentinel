@@ -38,3 +38,21 @@ class UsageProvider(ABC):
     @abstractmethod
     def fetch(self) -> UsageResult:
         """Fetch current usage. Returns UsageResult (may have .error set)."""
+
+    def merge_credentials_from(self, other: "UsageProvider") -> None:
+        """Inherit credentials from ``other`` for fields that ``self`` left empty.
+
+        Called by the store when two clients register against the same
+        ``(provider_name, api_key)`` fingerprint.  The normal flow is "newer
+        registration wins" — but a desktop client that auto-extracts cookies
+        from a logged-out browser would otherwise overwrite a working cookie
+        held by a programmatic client running on the same key.  This hook
+        lets cookie-bearing providers (xiaomi, crofai, opencode_go, …) keep
+        the existing credential when their own copy is missing.
+
+        Default implementation: no-op.  Providers without a cookie/secret
+        beyond ``api_key`` have nothing to merge — the fingerprint already
+        encodes the only credential and the freshly-instantiated provider
+        is functionally equivalent to the old one.
+        """
+        return None

@@ -101,6 +101,16 @@ class Store:
                 # creds and subscribers reported "unauthenticated" forever
                 # (the pool-dedup short-circuit silently discarded the new
                 # provider built from the updated config).
+                #
+                # ``merge_credentials_from`` lets cookie-bearing providers
+                # (xiaomi, crofai, opencode_go) inherit a still-valid cookie
+                # from the previous holder when the new registration didn't
+                # supply one.  The common case is a desktop client (Stream
+                # Deck) re-registering after its browser auto-extract came
+                # up empty — without the merge, that empty cookie would
+                # clobber the working one held by a programmatic client
+                # registered against the same ``tp-*`` key.
+                provider.merge_credentials_from(self.providers[pool_key].provider)
                 self.providers[pool_key].provider = provider
                 self.providers[pool_key].subscribers.add(instance_id)
             else:
