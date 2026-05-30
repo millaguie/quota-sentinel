@@ -100,14 +100,15 @@ def _items_to_windows(
             continue
         used = _coerce_int(item.get("used"))
         limit = _coerce_int(item.get("limit"))
-        # Prefer the server-computed percent when present; fall back to
-        # used/limit so we still surface a window if Xiaomi ever drops
-        # the convenience field.
+        # Prefer used/limit over the API's ``percent`` field — the
+        # Xiaomi console returns ``percent`` as a truncated integer, so
+        # a real 3.68 % comes back as 0.  Only fall back to the API
+        # value when we don't have ``limit``.
         pct: float
-        if "percent" in item and item.get("percent") is not None:
-            pct = _clamp_pct(item.get("percent"))
-        elif limit and limit > 0 and used is not None:
+        if limit and limit > 0 and used is not None:
             pct = _clamp_pct(used / limit * 100.0)
+        elif "percent" in item and item.get("percent") is not None:
+            pct = _clamp_pct(item.get("percent"))
         else:
             pct = 0.0
         metadata: dict[str, Any] = {"item_name": item.get("name")}

@@ -116,7 +116,9 @@ def test_fetch_parses_all_three_windows():
     assert comp.utilization == pytest.approx(50.0)
 
     monthly = result.windows["monthly"]
-    assert monthly.utilization == pytest.approx(20.49)
+    # Computed from used/limit (12_500_000 / 61_000_000 * 100), more
+    # precise than the API's truncated ``percent: 20.49`` value.
+    assert monthly.utilization == pytest.approx(20.4918, rel=1e-3)
 
 
 def test_fetch_clamps_utilisation():
@@ -165,6 +167,32 @@ def test_fetch_derives_percent_when_missing():
     with patch("quota_sentinel.providers.xiaomi.http_get", return_value=no_pct):
         result = provider.fetch()
     assert result.windows["plan"].utilization == pytest.approx(25.0)
+
+
+def test_fetch_prefers_used_over_truncated_percent():
+    """The Xiaomi console returns ``percent`` as a truncated integer, so a
+    real 3.68 % comes back as 0.  Real used/limit must win when both are
+    present so the user doesn't see "0%" on a 4 %-used plan.
+    """
+    truncated = {
+        "code": 0,
+        "data": {
+            "usage": {
+                "items": [
+                    {
+                        "name": "plan_total_token",
+                        "used": 404_645_087,
+                        "limit": 11_000_000_000,
+                        "percent": 0,  # console truncates 3.68 → 0
+                    }
+                ]
+            }
+        },
+    }
+    provider = XiaomiTokenPlanUsageProvider(session_cookie="c")
+    with patch("quota_sentinel.providers.xiaomi.http_get", return_value=truncated):
+        result = provider.fetch()
+    assert result.windows["plan"].utilization == pytest.approx(3.678, rel=1e-3)
 
 
 def test_fetch_skips_unknown_item_names():
