@@ -80,6 +80,7 @@ def create_provider(name: str, config: dict[str, Any]) -> UsageProvider:
         return MiniMaxUsageProvider(
             api_token=config["key"],
             group_id=config.get("group_id", ""),
+            session_cookie=config.get("session_cookie", ""),
         )
     if name == "deepseek":
         return DeepSeekUsageProvider(
