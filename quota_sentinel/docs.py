@@ -31,7 +31,7 @@ OPENAPI_BASE: dict = {
                 "in": "path",
                 "required": True,
                 "schema": {"type": "string"},
-                "description": "Instance identifier (SHA-256 prefix, 12 chars).",
+                "description": "Instance identifier (random UUID hex, 32 chars).",
             },
         },
         "schemas": {

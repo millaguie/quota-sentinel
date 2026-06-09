@@ -395,12 +395,13 @@ class ModelSwitcher:
             return False
 
     def _deregister(self) -> None:
-        if not self._instance_id:
+        if not (self._instance_id and self._api_key):
             return
         try:
             _http(
                 f"{self.sentinel_url}/v1/instances/{self._instance_id}",
                 method="DELETE",
+                headers={"X-API-Key": self._api_key},
             )
         except Exception:  # noqa: BLE001
             pass

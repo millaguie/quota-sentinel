@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
-import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Any
@@ -180,9 +179,7 @@ async def register_instance(request: Request) -> JSONResponse:
     hard_caps = body.get("hard_caps", {})
 
     # Generate instance_id
-    instance_id = hashlib.sha256(
-        f"{project_name}:{time.time()}".encode(),
-    ).hexdigest()[:12]
+    instance_id = uuid.uuid4().hex
 
     # Build providers from auth payload
     providers, keys = _build_providers_from_auth(auth, provider_config)
@@ -233,6 +230,18 @@ async def deregister_instance(request: Request) -> JSONResponse:
           application/json:
             schema:
               $ref: '#/components/schemas/StatusOk'
+      401:
+        description: Unauthorized.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
+      403:
+        description: API key does not belong to this instance.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Error'
       404:
         description: Instance not found.
         content:
@@ -240,8 +249,15 @@ async def deregister_instance(request: Request) -> JSONResponse:
             schema:
               $ref: '#/components/schemas/Error'
     """
-    store = _get_store()
+    entry = _get_instance_from_request(request)
+    if entry is None:
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
     instance_id = request.path_params["id"]
+    if entry.instance_id != instance_id:
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+
+    store = _get_store()
     if store.deregister_instance(instance_id):
         logger.info("Deregistered instance %s", instance_id)
         return JSONResponse({"status": "ok"})

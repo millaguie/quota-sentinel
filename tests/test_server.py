@@ -482,3 +482,114 @@ class TestMetricsEndpoint:
         response = client.get("/v1/metrics")
         assert response.status_code == 200
         assert "quota_sentinel_providers_total 1" in response.text
+
+
+# =============================================================================
+# Deregister Endpoint Auth Tests
+# =============================================================================
+
+
+def _register(client: TestClient, project_name: str = "test-project") -> dict:
+    response = client.post(
+        "/v1/instances",
+        json={
+            "project_name": project_name,
+            "auth": {
+                "opencode_auth": {
+                    "zai-coding-plan": {"key": "test-key-123"},
+                },
+            },
+        },
+    )
+    assert response.status_code == 201
+    return response.json()
+
+
+class TestDeregisterEndpointAuth:
+    """Tests that DELETE /v1/instances/{id} requires the instance's own key."""
+
+    def test_deregister_without_auth_returns_401(self):
+        """Deregistration without API key is rejected."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        data = _register(client)
+        response = client.delete(f"/v1/instances/{data['instance_id']}")
+
+        assert response.status_code == 401
+        assert response.json() == {"error": "unauthorized"}
+
+    def test_deregister_with_invalid_key_returns_401(self):
+        """Deregistration with an unknown API key is rejected."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        data = _register(client)
+        response = client.delete(
+            f"/v1/instances/{data['instance_id']}",
+            headers={"X-API-Key": "qs_not-a-real-key"},
+        )
+
+        assert response.status_code == 401
+
+    def test_deregister_with_other_instances_key_returns_403(self):
+        """An instance cannot deregister a different instance."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        victim = _register(client, "victim-project")
+        attacker = _register(client, "attacker-project")
+        response = client.delete(
+            f"/v1/instances/{victim['instance_id']}",
+            headers={"X-API-Key": attacker["api_key"]},
+        )
+
+        assert response.status_code == 403
+        assert response.json() == {"error": "forbidden"}
+
+    def test_deregister_with_own_key_returns_200(self):
+        """An instance can deregister itself with its own API key."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        data = _register(client)
+        response = client.delete(
+            f"/v1/instances/{data['instance_id']}",
+            headers={"X-API-Key": data["api_key"]},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+
+
+# =============================================================================
+# Instance ID Generation Tests
+# =============================================================================
+
+
+class TestInstanceIdGeneration:
+    """Tests that instance IDs are random UUIDs, not derived from inputs."""
+
+    def test_instance_id_is_uuid_hex(self):
+        """Instance ID is a 32-character hex string (uuid4)."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        data = _register(client)
+        assert len(data["instance_id"]) == 32
+        assert all(c in "0123456789abcdef" for c in data["instance_id"])
+
+    def test_instance_ids_differ_for_same_project(self):
+        """Two registrations with identical payloads get distinct IDs."""
+        config = ServerConfig()
+        app = create_app(config)
+        client = TestClient(app, raise_server_exceptions=False)
+
+        first = _register(client)
+        second = _register(client)
+        assert first["instance_id"] != second["instance_id"]
