@@ -337,7 +337,7 @@ class TestStoreRegisterInstance:
             keys={"claude": "api_key_123"},
         )
 
-        assert "claude" in store.velocities
+        assert any(k.startswith("claude:") for k in store.velocities)
 
     def test_deduplicates_same_key_adds_subscriber(self):
         """Same provider+key adds subscriber instead of creating new entry."""
@@ -676,9 +676,9 @@ class TestStoreDeregisterInstance:
             keys={"claude": "api_key"},
         )
 
-        assert "claude" in store.velocities
+        assert any(k.startswith("claude:") for k in store.velocities)
         store.deregister_instance("inst-123")
-        assert "claude" not in store.velocities
+        assert not any(k.startswith("claude:") for k in store.velocities)
 
     def test_keeps_velocity_tracker_for_other_provider_entries(self):
         """Keeps velocity tracker when other provider entries exist for that name."""
@@ -706,7 +706,7 @@ class TestStoreDeregisterInstance:
         store.deregister_instance("inst-1")
 
         # Velocity tracker for claude should still exist
-        assert "claude" in store.velocities
+        assert any(k.startswith("claude:") for k in store.velocities)
 
 
 class TestStoreHeartbeat:

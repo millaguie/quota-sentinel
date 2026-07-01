@@ -23,52 +23,50 @@ def _poll_all_providers(store: Store) -> dict[str, UsageResult]:
     this runs in the thread pool. Each provider fetch is wrapped in a
     try/except so one broken provider can't terminate the polling loop.
     """
-    results: dict[str, UsageResult] = {}
+    results: dict[str, UsageResult] = {}  # keyed by pool_key (name:fingerprint)
 
     # Snapshot to avoid "dictionary changed size during iteration" when
     # registrations happen concurrently on the main thread.
-    for _pool_key, pentry in list(store.providers.items()):
+    #
+    # ``store.providers`` is keyed by pool_key (provider_name:fingerprint), so
+    # every entry is already a DISTINCT account/key — poll each one on its own.
+    # (A previous version deduped by provider *name* and copied one account's
+    # result onto every same-named entry, which silently merged two accounts
+    # of the same provider, e.g. two Claude logins.)
+    for pool_key, pentry in list(store.providers.items()):
         pname = pentry.provider_name
-        # Only poll once per provider name (dedup across fingerprints)
-        if pname in results:
-            pentry.last_result = results[pname]
-            continue
+        acct = pentry.account_label
 
         try:
             result = pentry.provider.fetch()
         except Exception as exc:
-            logger.exception("  %s: fetch raised unexpectedly", pname)
+            logger.exception("  %s [%s]: fetch raised unexpectedly", pname, acct)
             result = UsageResult(provider=pname, error=f"fetch crashed: {exc}")
 
-        results[pname] = result
+        results[pool_key] = result
         pentry.last_result = result
 
         if result.error:
-            logger.warning("  %s: ERROR — %s", pname, result.error)
+            logger.warning("  %s [%s]: ERROR — %s", pname, acct, result.error)
         else:
-            # Update velocity trackers
-            if pname not in store.velocities:
-                store.velocities[pname] = {}
+            # Velocity trackers are keyed by pool_key so accounts don't mix.
+            if pool_key not in store.velocities:
+                store.velocities[pool_key] = {}
             for wname, wdata in result.windows.items():
-                if wname not in store.velocities[pname]:
-                    store.velocities[pname][wname] = VelocityTracker(
+                if wname not in store.velocities[pool_key]:
+                    store.velocities[pool_key][wname] = VelocityTracker(
                         max_samples=store.velocity_window,
                     )
-                store.velocities[pname][wname].add(wdata.utilization)
+                store.velocities[pool_key][wname].add(wdata.utilization)
 
             # Log
             parts = []
             for wn, wd in result.windows.items():
-                tracker = store.velocities.get(pname, {}).get(wn)
+                tracker = store.velocities.get(pool_key, {}).get(wn)
                 vel = tracker.velocity_pct_per_hour() if tracker else 0.0
                 vel_str = f" +{vel:.1f}%/h" if vel > 0 else ""
                 parts.append(f"{wn}={wd.utilization:.0f}%{vel_str}")
-            logger.info("  %s: %s", pname, ", ".join(parts))
-
-    # Propagate results to all entries with same provider name
-    for pentry in list(store.providers.values()):
-        if pentry.provider_name in results:
-            pentry.last_result = results[pentry.provider_name]
+            logger.info("  %s [%s]: %s", pname, acct, ", ".join(parts))
 
     return results
 

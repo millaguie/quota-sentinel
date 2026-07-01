@@ -30,6 +30,15 @@ class ProviderEntry:
     fingerprint: str
     subscribers: set[str] = field(default_factory=set)  # instance_ids
     last_result: UsageResult | None = None
+    # Optional human-friendly account label (e.g. "personal" / "work") so two
+    # accounts of the SAME provider are distinguishable in metrics and queries.
+    # Falls back to the fingerprint when unset (still unique per account).
+    account: str = ""
+
+    @property
+    def account_label(self) -> str:
+        """The discriminator used in metrics/queries — label or fingerprint."""
+        return self.account or self.fingerprint
 
 
 @dataclass
@@ -79,17 +88,22 @@ class Store:
         providers: dict[str, UsageProvider],
         keys: dict[str, str],
         hard_caps: dict[str, float] | None = None,
+        accounts: dict[str, str] | None = None,
     ) -> InstanceEntry:
         """Register a client instance with its providers.
 
         providers: {provider_name: UsageProvider} — already instantiated
         keys: {provider_name: api_key} — for fingerprinting
+        accounts: {provider_name: account_label} — optional friendly label to
+            distinguish multiple accounts of the same provider.
         """
+        accounts = accounts or {}
         fingerprints: list[str] = []
 
         for pname, provider in providers.items():
             fp = _fingerprint(pname, keys.get(pname, ""))
             pool_key = f"{pname}:{fp}"
+            account = (accounts.get(pname) or "").strip()
 
             if pool_key in self.providers:
                 # Same provider+key fingerprint already in the pool — refresh
@@ -113,6 +127,9 @@ class Store:
                 provider.merge_credentials_from(self.providers[pool_key].provider)
                 self.providers[pool_key].provider = provider
                 self.providers[pool_key].subscribers.add(instance_id)
+                # Let a (re-)registration set/refresh a friendly account label.
+                if account:
+                    self.providers[pool_key].account = account
             else:
                 # New provider+key combination
                 self.providers[pool_key] = ProviderEntry(
@@ -120,9 +137,10 @@ class Store:
                     provider_name=pname,
                     fingerprint=fp,
                     subscribers={instance_id},
+                    account=account,
                 )
-                if pname not in self.velocities:
-                    self.velocities[pname] = {}
+                if pool_key not in self.velocities:
+                    self.velocities[pool_key] = {}
 
             fingerprints.append(fp)
 
@@ -154,12 +172,10 @@ class Store:
                 orphaned.append(pool_key)
 
         for pool_key in orphaned:
-            pentry = self.providers.pop(pool_key)
+            self.providers.pop(pool_key)
             logger.info("Removed orphaned provider %s (no subscribers)", pool_key)
-            # Clean up velocity tracker if no other entry for this provider name
-            pname = pentry.provider_name
-            if not any(e.provider_name == pname for e in self.providers.values()):
-                self.velocities.pop(pname, None)
+            # Velocity trackers are keyed per pool_key (per account/key).
+            self.velocities.pop(pool_key, None)
 
         return True
 

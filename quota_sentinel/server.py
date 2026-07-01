@@ -188,6 +188,17 @@ async def register_instance(request: Request) -> JSONResponse:
             {"error": "no valid providers found in auth"}, status_code=400
         )
 
+    # Optional friendly account label to distinguish multiple accounts of the
+    # same provider. A top-level "account" applies to every provider from this
+    # instance; a per-provider "account" in provider_config overrides it.
+    top_account = (body.get("account") or "").strip()
+    accounts: dict[str, str] = {}
+    for pname in providers:
+        per = provider_config.get(pname, {}).get("account") if provider_config else None
+        label = (str(per).strip() if per else "") or top_account
+        if label:
+            accounts[pname] = label
+
     entry = store.register_instance(
         instance_id=instance_id,
         project_name=project_name,
@@ -196,6 +207,7 @@ async def register_instance(request: Request) -> JSONResponse:
         providers=providers,
         keys=keys,
         hard_caps=hard_caps or None,
+        accounts=accounts or None,
     )
 
     logger.info(
@@ -361,7 +373,7 @@ async def global_status(request: Request) -> JSONResponse:
         if pe.last_result and not pe.last_result.error:
             windows = {}
             for wn, wd in pe.last_result.windows.items():
-                tracker = store.velocities.get(pname, {}).get(wn)
+                tracker = store.velocities.get(f"{pname}:{pe.fingerprint}", {}).get(wn)
                 vel = tracker.velocity_pct_per_hour() if tracker else 0.0
                 w: dict[str, Any] = {
                     "utilization": round(wd.utilization, 1),
@@ -476,7 +488,7 @@ async def providers_summary(request: Request) -> JSONResponse:
         status_order = {"GREEN": 0, "YELLOW": 1, "RED": 2}
         windows = {}
         for wn, wd in pe.last_result.windows.items():
-            tracker = store.velocities.get(pname, {}).get(wn)
+            tracker = store.velocities.get(f"{pname}:{pe.fingerprint}", {}).get(wn)
             vel = tracker.velocity_pct_per_hour() if tracker else 0.0
             cap = get_hard_cap(pname, wn, config.hard_caps)
             ws = _window_status(wd.utilization, vel, cap, config.safety_margin_min)
@@ -531,8 +543,17 @@ async def provider_detail(request: Request) -> JSONResponse:
     store = _get_store()
     config = _get_config()
     name = request.path_params["name"]
+    # Optional ?account= disambiguates when several accounts of the same
+    # provider are registered (matches the friendly label or the fingerprint).
+    account = request.query_params.get("account")
 
     entries = [pe for pe in store.unique_providers() if pe.provider_name == name]
+    if account:
+        entries = [
+            pe
+            for pe in entries
+            if account in (pe.account, pe.fingerprint, pe.account_label)
+        ]
     if not entries:
         return JSONResponse({"error": "not found"}, status_code=404)
 
@@ -541,7 +562,16 @@ async def provider_detail(request: Request) -> JSONResponse:
     pe = entries[0]
     result: dict[str, Any] = {
         "name": name,
+        "account": pe.account_label,
         "fingerprint": pe.fingerprint,
+        # Other accounts of this provider, so a client can discover/select them.
+        "accounts": sorted(
+            {
+                e.account_label
+                for e in store.unique_providers()
+                if e.provider_name == name
+            }
+        ),
         "subscribers": sorted(pe.subscribers),
     }
     if pe.last_result:
@@ -554,7 +584,7 @@ async def provider_detail(request: Request) -> JSONResponse:
             status_order = {"GREEN": 0, "YELLOW": 1, "RED": 2}
             windows_out: dict[str, Any] = {}
             for wn, wd in pe.last_result.windows.items():
-                tracker = store.velocities.get(name, {}).get(wn)
+                tracker = store.velocities.get(f"{name}:{pe.fingerprint}", {}).get(wn)
                 vel = tracker.velocity_pct_per_hour() if tracker else 0.0
                 cap = get_hard_cap(name, wn, config.hard_caps)
                 ws = _window_status(wd.utilization, vel, cap, config.safety_margin_min)
@@ -666,12 +696,13 @@ async def metrics(request: Request) -> PlainTextResponse:
         pname = pe.provider_name
         if pe.last_result and not pe.last_result.error:
             for wn, wd in pe.last_result.windows.items():
-                tracker = store.velocities.get(pname, {}).get(wn)
+                tracker = store.velocities.get(f"{pname}:{pe.fingerprint}", {}).get(wn)
                 vel = tracker.velocity_pct_per_hour() if tracker else 0.0
                 cap = get_hard_cap(pname, wn, config.hard_caps)
                 ws = _window_status(wd.utilization, vel, cap, config.safety_margin_min)
 
-                util_label = f'provider="{pname}",window="{wn}"'
+                account = pe.account_label
+                util_label = f'provider="{pname}",account="{account}",window="{wn}"'
                 lines.append(
                     "# HELP quota_sentinel_provider_utilization Per-provider utilization %"
                 )
@@ -680,7 +711,7 @@ async def metrics(request: Request) -> PlainTextResponse:
                     f"quota_sentinel_provider_utilization{{{util_label}}} {wd.utilization:.1f}"
                 )
 
-                status_label = f'provider="{pname}",window="{wn}",status="{ws}"'
+                status_label = f'provider="{pname}",account="{account}",window="{wn}",status="{ws}"'
                 lines.append(
                     "# HELP quota_sentinel_provider_status Per-provider status (1=GREEN, 2=YELLOW, 3=RED)"
                 )
