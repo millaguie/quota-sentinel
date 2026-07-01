@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from quota_sentinel.providers.alibaba import AlibabaUsageProvider
+from quota_sentinel.providers.alibaba_token_plan import AlibabaTokenPlanUsageProvider
 from quota_sentinel.providers.base import UsageProvider, UsageResult, WindowUsage
 from quota_sentinel.providers.claude import ClaudeUsageProvider
 from quota_sentinel.providers.copilot import CopilotUsageProvider
@@ -23,6 +24,7 @@ __all__ = [
     "create_provider",
     "AUTH_KEY_TO_PROVIDER",
     "XiaomiTokenPlanUsageProvider",
+    "AlibabaTokenPlanUsageProvider",
 ]
 
 # Maps opencode auth.json key names → provider names
@@ -38,6 +40,13 @@ AUTH_KEY_TO_PROVIDER: dict[str, str] = {
     "alibaba-coding-plan": "alibaba",
     "dashscope": "alibaba",
     "alibaba": "alibaba",
+    # Alibaba Model Studio Token Plan (Team Edition) — Credits, cookie-gated
+    # console RPC; distinct subscription from the coding plan above.
+    "alibaba-token-plan": "alibaba_token_plan",
+    "alibaba-token-plan-intl": "alibaba_token_plan",
+    "alibaba-token-plan-cn": "alibaba_token_plan",
+    "bailian-token-plan": "alibaba_token_plan",
+    "tokenplan-teams": "alibaba_token_plan",
     "crofai": "crofai",
     "CrofAI": "crofai",
     "crof": "crofai",
@@ -90,6 +99,13 @@ def create_provider(name: str, config: dict[str, Any]) -> UsageProvider:
     if name == "alibaba":
         return AlibabaUsageProvider(
             api_token=config["key"],
+            region=config.get("region", "intl"),
+        )
+    if name == "alibaba_token_plan":
+        return AlibabaTokenPlanUsageProvider(
+            session_cookie=config.get("session_cookie", ""),
+            sec_token=config.get("sec_token", ""),
+            api_token=config.get("key", ""),
             region=config.get("region", "intl"),
         )
     if name == "crofai":
