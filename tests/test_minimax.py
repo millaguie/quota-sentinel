@@ -51,14 +51,20 @@ def test_fetch_requires_token():
     assert result.error == "no token"
 
 
-def test_fetch_requires_group_id():
-    result = _provider(group_id="").fetch()
-    assert result.error == "no group_id"
-
-
-def test_fetch_requires_session_cookie():
-    result = _provider(session_cookie="").fetch()
-    assert result.error == "no session_cookie"
+def test_fetch_works_without_cookie_or_group_id():
+    # api.minimax.io authenticates by the sk-cp-* key alone — group_id and
+    # session cookie are optional and must not block the fetch.
+    provider = _provider(session_cookie="", group_id="")
+    with patch(
+        "quota_sentinel.providers.minimax.http_get", return_value=GOOD_RESPONSE
+    ) as mock_get:
+        result = provider.fetch()
+    assert result.error is None
+    assert set(result.windows) == {"MM-M2.5_interval", "MM-M2.5_weekly"}
+    url = mock_get.call_args.args[0]
+    headers = mock_get.call_args.kwargs["headers"]
+    assert "GroupId" not in url
+    assert "cookie" not in headers
 
 
 # ── Parsing ───────────────────────────────────────────────────────────────
@@ -77,6 +83,47 @@ def test_fetch_parses_interval_and_weekly_windows():
     # weekly: total 1000, remaining 250 → used 750 → 75%
     assert result.windows["MM-M2.5_weekly"].utilization == 75.0
     assert result.windows["MM-M2.5_interval"].resets_at is not None
+
+
+# Post-2026 usage-based Token Plan: the pooled ``general`` model reports its
+# quota via ``current_*_remaining_percent`` while the count fields are 0.
+USAGE_BASED_RESPONSE = {
+    "base_resp": {"status_code": 0, "status_msg": "success"},
+    "model_remains": [
+        {
+            "model_name": "general",
+            "current_interval_total_count": 0,
+            "current_interval_usage_count": 0,
+            "current_interval_remaining_percent": 91,
+            "remains_time": 3_600_000,
+            "current_weekly_total_count": 0,
+            "current_weekly_usage_count": 0,
+            "current_weekly_remaining_percent": 10,
+            "weekly_remains_time": 200_000_000,
+        },
+        {
+            "model_name": "video",  # non-text pool, filtered out
+            "current_weekly_total_count": 35,
+            "current_weekly_usage_count": 35,
+            "current_weekly_remaining_percent": 100,
+        },
+    ],
+}
+
+
+def test_fetch_parses_usage_based_remaining_percent():
+    provider = _provider()
+    with patch(
+        "quota_sentinel.providers.minimax.http_get",
+        return_value=USAGE_BASED_RESPONSE,
+    ):
+        result = provider.fetch()
+
+    assert result.error is None
+    # video is filtered; the general pooled quota is read from remaining_percent
+    assert set(result.windows) == {"general_interval", "general_weekly"}
+    assert result.windows["general_interval"].utilization == 9.0  # 100 - 91
+    assert result.windows["general_weekly"].utilization == 90.0  # 100 - 10
 
 
 def test_fetch_sends_cookie_header():

@@ -1,19 +1,23 @@
-"""MiniMax coding plan usage provider.
+"""MiniMax Token/Coding Plan usage provider.
 
-As of early 2026 the Token/Coding Plan usage endpoint
-(``/v1/api/openplatform/coding_plan/remains``) no longer accepts the
-``sk-cp-*`` API key on its own.  Calling it with only
-``Authorization: Bearer <key>`` now comes back with::
+The Token Plan usage endpoint (``/v1/api/openplatform/coding_plan/remains``)
+is served from two hosts with different auth:
 
-    {"base_resp": {"status_code": 1004, "status_msg": "cookie is missing, log in again"}}
+* ``platform.minimax.io`` — the browser console host; **cookie-gated**
+  (a bare Bearer key returns ``status_code 1004 "cookie is missing"``).
+* ``api.minimax.io`` — the API host; accepts the ``sk-cp-*`` key as a plain
+  ``Authorization: Bearer`` token with **no cookie and no GroupId**.
 
-The endpoint is gated behind the operator's logged-in browser session at
-``platform.minimax.io`` — exactly like the Xiaomi Token Plan console.  So
-the provider takes a ``session_cookie`` captured from a logged-in browser
-and sends it alongside the Bearer header.  Refresh the cookie from DevTools
-when the meter starts reporting ``cookie is missing`` / ``HTTP 401``.
+We use ``api.minimax.io`` so the meter runs unattended (no DevTools cookie
+to refresh).  ``session_cookie`` / ``group_id`` are still accepted for
+backward compatibility but are optional and only sent when supplied.
 
-(See https://github.com/MiniMax-AI/MiniMax-M2/issues/88.)
+Since mid-2026 MiniMax moved the text quota to a **usage-based** model: the
+``current_*_total_count`` fields are ``0`` for the pooled ``general`` model
+and the real figure lives in ``current_*_remaining_percent``.  We read that
+field first, falling back to the legacy request counts (still used by
+``video`` etc.).  The older ``mmx`` CLI missed this and rendered 0% — same
+bug this provider used to have.
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ from quota_sentinel.providers.base import UsageProvider, UsageResult, WindowUsag
 from quota_sentinel.providers.http import http_get
 
 MINIMAX_REMAINS_URL = (
-    "https://platform.minimax.io/v1/api/openplatform/coding_plan/remains"
+    "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
 )
 
 
@@ -68,22 +72,23 @@ class MiniMaxUsageProvider(UsageProvider):
     def fetch(self) -> UsageResult:
         if not self.api_token:
             return UsageResult(provider=self.name, error="no token")
-        if not self.group_id:
-            return UsageResult(provider=self.name, error="no group_id")
-        if not self.session_cookie:
-            return UsageResult(provider=self.name, error="no session_cookie")
 
-        url = f"{MINIMAX_REMAINS_URL}?GroupId={self.group_id}"
+        # api.minimax.io authenticates by the sk-cp-* key alone. GroupId and
+        # cookie are optional (legacy platform.minimax.io flow) — sent only
+        # when the operator supplied them.
+        url = MINIMAX_REMAINS_URL
+        if self.group_id:
+            url = f"{url}?GroupId={self.group_id}"
+        headers = {
+            "accept": "application/json, text/plain, */*",
+            "authorization": f"Bearer {self.api_token}",
+            "referer": "https://platform.minimax.io/user-center/payment/coding-plan",
+        }
+        if self.session_cookie:
+            headers["cookie"] = self._build_cookie_header()
+
         try:
-            data = http_get(
-                url,
-                headers={
-                    "accept": "application/json, text/plain, */*",
-                    "authorization": f"Bearer {self.api_token}",
-                    "cookie": self._build_cookie_header(),
-                    "referer": "https://platform.minimax.io/user-center/payment/coding-plan",
-                },
-            )
+            data = http_get(url, headers=headers)
         except urllib.error.HTTPError as e:
             error_map = {
                 401: "session cookie expired",
@@ -124,25 +129,41 @@ class MiniMaxUsageProvider(UsageProvider):
                 continue
             short = mname.replace("MiniMax-", "MM-").replace("minimax-", "mm-")
 
-            # Interval quota
-            total = model.get("current_interval_total_count", 0)
-            remaining = model.get("current_interval_usage_count", 0)
-            if total > 0:
-                used = total - remaining
-                pct = used / total * 100
-                ra = self._reset_time(model.get("remains_time", 0))
-                windows[f"{short}_interval"] = WindowUsage(min(pct, 100), ra)
+            iu = self._window_usage(
+                model.get("current_interval_remaining_percent"),
+                model.get("current_interval_total_count", 0),
+                model.get("current_interval_usage_count", 0),
+                model.get("remains_time", 0),
+            )
+            if iu is not None:
+                windows[f"{short}_interval"] = iu
 
-            # Weekly quota
-            wtotal = model.get("current_weekly_total_count", 0)
-            if wtotal > 0:
-                wremaining = model.get("current_weekly_usage_count", 0)
-                wused = wtotal - wremaining
-                wpct = wused / wtotal * 100
-                wra = self._reset_time(model.get("weekly_remains_time", 0))
-                windows[f"{short}_weekly"] = WindowUsage(min(wpct, 100), wra)
+            wu = self._window_usage(
+                model.get("current_weekly_remaining_percent"),
+                model.get("current_weekly_total_count", 0),
+                model.get("current_weekly_usage_count", 0),
+                model.get("weekly_remains_time", 0),
+            )
+            if wu is not None:
+                windows[f"{short}_weekly"] = wu
 
         return UsageResult(provider=self.name, windows=windows)
+
+    def _window_usage(
+        self, remaining_percent, total: int, remaining: int, remains_ms: int
+    ) -> WindowUsage | None:
+        """Build a WindowUsage from MiniMax's usage-based ``remaining_percent``
+        (post-2026 Token Plan — the count fields are 0 for pooled models), or,
+        when that field is absent, from the legacy request-count fields
+        (``current_*_usage_count`` holds the *remaining* count). Returns None
+        when neither is populated so the window is simply omitted."""
+        if remaining_percent is not None:
+            used = 100.0 - float(remaining_percent)
+        elif total > 0:
+            used = (total - remaining) / total * 100
+        else:
+            return None
+        return WindowUsage(max(0.0, min(used, 100.0)), self._reset_time(remains_ms))
 
     @staticmethod
     def _reset_time(remains_ms: int) -> datetime | None:
