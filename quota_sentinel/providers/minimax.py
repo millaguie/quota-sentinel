@@ -29,9 +29,7 @@ from datetime import UTC, datetime
 from quota_sentinel.providers.base import UsageProvider, UsageResult, WindowUsage
 from quota_sentinel.providers.http import http_get
 
-MINIMAX_REMAINS_URL = (
-    "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
-)
+MINIMAX_REMAINS_URL = "https://api.minimax.io/v1/api/openplatform/coding_plan/remains"
 
 
 class MiniMaxUsageProvider(UsageProvider):
