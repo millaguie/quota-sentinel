@@ -130,7 +130,7 @@ def test_fetch_stale_sec_token_envelope():
     assert result.error == "sec_token expired"
 
 
-def test_fetch_addon_zero_total_is_no_totals():
+def test_fetch_addon_zero_total_is_full_window_not_error():
     """The shared-pack add-on ProductCode reads 0/0 when not purchased."""
     resp = {
         "code": "200",
@@ -138,7 +138,24 @@ def test_fetch_addon_zero_total_is_no_totals():
     }
     with patch(PATCH, return_value=resp):
         result = _provider().fetch()
-    assert result.error == "no credit totals"
+    assert result.error is None
+    window = result.windows["credits"]
+    # TotalCount absent → treated as no active seat subscription.
+    assert window.utilization == 0.0
+    assert window.metadata["note"] == "no active seat subscription"
+
+
+def test_fetch_no_active_subscription_reports_exhausted():
+    resp = {
+        "code": "200",
+        "data": {"Data": {"TotalValue": "0", "TotalSurplusValue": "0", "TotalCount": 0}},
+    }
+    with patch(PATCH, return_value=resp):
+        result = _provider().fetch()
+    assert result.error is None
+    window = result.windows["credits"]
+    assert window.utilization == 0.0
+    assert window.metadata["note"] == "no active seat subscription"
 
 
 def test_fetch_http_401_maps_to_auth_failed():

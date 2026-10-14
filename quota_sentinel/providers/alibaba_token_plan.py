@@ -173,8 +173,33 @@ class AlibabaTokenPlanUsageProvider(UsageProvider):
 
         total = _to_float(summary.get("TotalValue"))
         surplus = _to_float(summary.get("TotalSurplusValue"))
-        if total is None or surplus is None or total <= 0:
+        if total is None or surplus is None:
             return UsageResult(provider=self.name, error="no credit totals")
+        if total <= 0:
+            # Legit zero state: the console answers TotalValue/Surplus=0 when
+            # no seat subscription (or shared pack) is in force — e.g. an
+            # expired plan or wrong ProductCode. Report it as a full window,
+            # not an error.
+            return UsageResult(
+                provider=self.name,
+                windows={
+                    "credits": WindowUsage(
+                        100.0 if int(summary.get("TotalCount") or 0) > 0 else 0.0,
+                        None,
+                        metadata={
+                            "total_credits": 0.0,
+                            "remaining_credits": max(surplus, 0.0),
+                            "used_credits": max(total - surplus, 0.0),
+                            "active_subscriptions": summary.get("TotalCount"),
+                            "note": (
+                                "no active seat subscription"
+                                if int(summary.get("TotalCount") or 0) == 0
+                                else "credits exhausted"
+                            ),
+                        },
+                    )
+                },
+            )
 
         used = max(total - surplus, 0.0)
         pct = min(used / total * 100, 100.0)
