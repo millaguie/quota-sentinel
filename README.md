@@ -176,6 +176,7 @@ The `POST /v1/instances` endpoint accepts different auth formats:
 |----------|---------|
 | minimax | `group_id`: string |
 | copilot | `github_username`: string, `plan`: "pro" or "business" |
+| opencode_go | `session_cookie`: value of the `__Host-console_session` cookie from opencode.ai DevTools (primary: Console JSON API via `x-org-id=<workspace_id>`); `auth_cookie`: legacy SSR-scrape fallback only |
 
 ### Status & monitoring
 

@@ -253,3 +253,85 @@ def test_merge_credentials_keeps_own_cookie_when_present():
 
     assert fresh.auth_cookie == "mine"
     assert fresh.workspace_id == "ws-mine"
+
+
+# ── Console JSON API (primary path since the 2026-10 SSR removal) ───────
+
+
+STATUS_JSON = {
+    "product": "go",
+    "access": {
+        "endsAt": "2026-11-02T22:16:42.000Z",
+        "meters": {
+            "fiveHour": {
+                "resetsAt": None,
+                "limitMicroCents": "1200000000",
+                "usedMicroCents": "600000000",
+            },
+            "week": {
+                "resetsAt": "2026-10-19T00:00:00.000Z",
+                "limitMicroCents": "3000000000",
+                "usedMicroCents": "30000000000",
+            },
+            "month": {
+                "resetsAt": "2026-11-02T22:16:42.000Z",
+                "limitMicroCents": "6000000000",
+                "usedMicroCents": "3878745647",
+            },
+        },
+    },
+}
+
+
+def test_status_session_cookie_takes_priority_over_scrape():
+    provider = OpencodeGoUsageProvider(workspace_id="ws", session_cookie="sess")
+    with patch.object(provider, "_fetch_status", return_value=STATUS_JSON), \
+         patch.object(provider, "_fetch_html", side_effect=AssertionError("scrape must not run")):
+        result = provider.fetch()
+    assert result.error is None
+    assert set(result.windows) == {"rolling_5h", "weekly", "monthly"}
+    five = result.windows["rolling_5h"]
+    assert five.utilization == pytest.approx(50.0)
+    assert five.metadata["used_micro_cents"] == 600000000
+
+
+def test_status_utilisation_clamped_to_full():
+    provider = OpencodeGoUsageProvider(workspace_id="ws", session_cookie="sess")
+    result_ok = None
+    with patch.object(provider, "_fetch_status", return_value=STATUS_JSON):
+        result_ok = provider.fetch()
+    assert result_ok.windows["weekly"].utilization == 100.0
+
+
+def test_status_month_matches_real_dashboard_percent():
+    provider = OpencodeGoUsageProvider(workspace_id="ws", session_cookie="sess")
+    with patch.object(provider, "_fetch_status", return_value=STATUS_JSON):
+        month = provider.fetch().windows["monthly"]
+    assert month.utilization == pytest.approx(64.6457607833, rel=1e-9)
+    assert month.resets_at is not None
+
+
+def test_fetch_requires_session_or_auth_cookie():
+    provider = OpencodeGoUsageProvider(workspace_id="ws")
+    result = provider.fetch()
+    assert result.windows == {}
+    assert "session_cookie" in result.error.lower()
+
+
+def test_status_http_401_reports_expired_session():
+    provider = OpencodeGoUsageProvider(workspace_id="ws", session_cookie="sess")
+    err = urllib.error.HTTPError(
+        url="x", code=401, msg="Unauthorized", hdrs=None, fp=None  # type: ignore[arg-type]
+    )
+    with patch.object(provider, "_fetch_status", side_effect=err):
+        result = provider.fetch()
+    assert result.windows == {}
+    assert "401" in result.error and "session" in result.error.lower()
+
+
+def test_status_without_meters_is_explicit_error():
+    provider = OpencodeGoUsageProvider(workspace_id="ws", session_cookie="sess")
+    with patch.object(provider, "_fetch_status", return_value={"access": None}):
+        result = provider.fetch()
+    assert result.windows == {}
+    assert "meters" in result.error.lower()

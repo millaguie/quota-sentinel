@@ -119,6 +119,7 @@ def create_provider(name: str, config: dict[str, Any]) -> UsageProvider:
         return OpencodeGoUsageProvider(
             workspace_id=config.get("workspace_id", ""),
             auth_cookie=config.get("auth_cookie", ""),
+            session_cookie=config.get("session_cookie", ""),
             api_token=config.get("key", ""),
         )
     if name == "xiaomi":
