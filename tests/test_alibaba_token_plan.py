@@ -148,7 +148,9 @@ def test_fetch_addon_zero_total_is_full_window_not_error():
 def test_fetch_no_active_subscription_reports_exhausted():
     resp = {
         "code": "200",
-        "data": {"Data": {"TotalValue": "0", "TotalSurplusValue": "0", "TotalCount": 0}},
+        "data": {
+            "Data": {"TotalValue": "0", "TotalSurplusValue": "0", "TotalCount": 0}
+        },
     }
     with patch(PATCH, return_value=resp):
         result = _provider().fetch()

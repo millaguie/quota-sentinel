@@ -285,8 +285,12 @@ STATUS_JSON = {
 
 def test_status_session_cookie_takes_priority_over_scrape():
     provider = OpencodeGoUsageProvider(workspace_id="ws", session_cookie="sess")
-    with patch.object(provider, "_fetch_status", return_value=STATUS_JSON), \
-         patch.object(provider, "_fetch_html", side_effect=AssertionError("scrape must not run")):
+    with (
+        patch.object(provider, "_fetch_status", return_value=STATUS_JSON),
+        patch.object(
+            provider, "_fetch_html", side_effect=AssertionError("scrape must not run")
+        ),
+    ):
         result = provider.fetch()
     assert result.error is None
     assert set(result.windows) == {"rolling_5h", "weekly", "monthly"}
@@ -321,7 +325,11 @@ def test_fetch_requires_session_or_auth_cookie():
 def test_status_http_401_reports_expired_session():
     provider = OpencodeGoUsageProvider(workspace_id="ws", session_cookie="sess")
     err = urllib.error.HTTPError(
-        url="x", code=401, msg="Unauthorized", hdrs=None, fp=None  # type: ignore[arg-type]
+        url="x",
+        code=401,
+        msg="Unauthorized",
+        hdrs=None,
+        fp=None,  # type: ignore[arg-type]
     )
     with patch.object(provider, "_fetch_status", side_effect=err):
         result = provider.fetch()

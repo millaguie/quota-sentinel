@@ -111,7 +111,11 @@ def _build_price_map(models_payload) -> dict[str, dict[str, str]]:
         if isinstance(models_payload, dict)
         else models_payload
     )
-    return {m["id"]: m.get("pricing", {}) for m in models if isinstance(m, dict) and m.get("id")}
+    return {
+        m["id"]: m.get("pricing", {})
+        for m in models
+        if isinstance(m, dict) and m.get("id")
+    }
 
 
 def compute_report(usage: dict, prices: dict[str, dict[str, str]]) -> dict:
@@ -161,8 +165,10 @@ def _print_table(report: dict) -> None:
             f"{r['cost_input']:>10.2f}{r['cost_output']:>10.2f}{r['cost_total']:>11.2f}"
         )
     print("-" * 89)
-    print(f"{'TOTAL (pay-as-you-go)':28}{'':>16}{'':>14}{'':>10}{'':>10}"
-          f"{report['total_cost']:>11.2f}")
+    print(
+        f"{'TOTAL (pay-as-you-go)':28}{'':>16}{'':>14}{'':>10}{'':>10}"
+        f"{report['total_cost']:>11.2f}"
+    )
     if report["unmatched"]:
         print("\nUnmatched models (no pay-as-you-go price in /v1/models, excluded):")
         for u in report["unmatched"]:
@@ -176,13 +182,25 @@ def _print_table(report: dict) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--cookie", help="crof.ai session cookie value (overrides env/browser)")
-    ap.add_argument("--api-key", default=os.environ.get("CROF_API_KEY", ""),
-                    help="crof.ai API key (optional; /v1/models is public)")
-    ap.add_argument("--browser", default="chrome",
-                    help="browser to extract the session cookie from (default: chrome)")
-    ap.add_argument("--browser-cookies", help="path to streamdeck browser_cookies.py helper")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--cookie", help="crof.ai session cookie value (overrides env/browser)"
+    )
+    ap.add_argument(
+        "--api-key",
+        default=os.environ.get("CROF_API_KEY", ""),
+        help="crof.ai API key (optional; /v1/models is public)",
+    )
+    ap.add_argument(
+        "--browser",
+        default="chrome",
+        help="browser to extract the session cookie from (default: chrome)",
+    )
+    ap.add_argument(
+        "--browser-cookies", help="path to streamdeck browser_cookies.py helper"
+    )
     ap.add_argument("--json", action="store_true", help="emit the report as JSON")
     args = ap.parse_args(argv)
 
