@@ -171,10 +171,13 @@ class OpencodeGoUsageProvider(UsageProvider):
                 used = int(meter["usedMicroCents"])
             except (KeyError, TypeError, ValueError):
                 continue
-            utilization = max(0.0, min(100.0, used / limit * 100.0)) if limit > 0 else 0.0
+            utilization = (
+                max(0.0, min(100.0, used / limit * 100.0)) if limit > 0 else 0.0
+            )
             windows[window_name] = WindowUsage(
                 utilization=utilization,
-                resets_at=self._parse_iso(meter.get("resetsAt")) or self._parse_iso(access.get("endsAt")),
+                resets_at=self._parse_iso(meter.get("resetsAt"))
+                or self._parse_iso(access.get("endsAt")),
                 metadata={
                     "used_micro_cents": used,
                     "limit_micro_cents": limit,
@@ -209,7 +212,9 @@ class OpencodeGoUsageProvider(UsageProvider):
                     )
                 return UsageResult(provider=self.name, error=f"HTTP {e.code}")
             except urllib.error.URLError as e:
-                return UsageResult(provider=self.name, error=f"network error: {e.reason}")
+                return UsageResult(
+                    provider=self.name, error=f"network error: {e.reason}"
+                )
             except Exception as e:  # noqa: BLE001
                 return UsageResult(provider=self.name, error=f"unexpected error: {e}")
             windows = self._windows_from_status(status)
